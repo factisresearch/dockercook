@@ -15,5 +15,30 @@ executable dockercook
   main-is:             Main.hs
   -- other-modules:       
   build-depends:       base ==4.6.*,
-                       optparse-applicative >=0.8 && <0.9
+                       attoparsec >=0.11 && <0.12,
+                       bytestring >=0.10 && <0.11,
+                       conduit >=1.0 && <1.1,
+                       cryptohash >=0.11 && <0.12,
+                       filesystem-conduit >=1.0 && <1.1,
+                       optparse-applicative >=0.8 && <0.9,
+                       system-filepath >=0.4 && <0.5,
+                       text >=1.1 && <1.2
   hs-source-dirs:      src
+  ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
+
+test-suite dockercook-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      src
+  main-is:             Tests.hs
+  -- other-modules:       Tests.Routing
+  build-depends:       HTF ==0.11.*,
+                       base ==4.6.*,
+                       attoparsec >=0.11 && <0.12,
+                       bytestring >=0.10 && <0.11,
+                       conduit >=1.0 && <1.1,
+                       cryptohash >=0.11 && <0.12,
+                       filesystem-conduit >=1.0 && <1.1,
+                       optparse-applicative >=0.8 && <0.9,
+                       system-filepath >=0.4 && <0.5,
+                       text >=1.1 && <1.2
+  ghc-options: -Wall -fno-warn-orphans

@@ -1,5 +1,7 @@
 module Cook.Types where
 
+import qualified Data.ByteString as BS
+
 data CookCmd
    = CookBuild CookConfig
    | CookClean FilePath
@@ -14,3 +16,7 @@ data CookConfig
    , cc_buildFileDir :: FilePath
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
+
+newtype SHA1 =
+    SHA1 { unSha1 :: BS.ByteString }
+         deriving (Show, Eq)
