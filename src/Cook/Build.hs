@@ -2,15 +2,12 @@
 module Cook.Build (cookBuild) where
 
 import Cook.Types
-import Cook.BuildFile
-
-import qualified Crypto.Hash.SHA1 as SHA1
 
 import Data.Conduit
-import qualified Filesystem.Path.CurrentOS as FP
-import qualified Data.Conduit.List as CL
+import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.Conduit.Filesystem as FS
-import qualified Data.ByteString as BS
+import qualified Data.Conduit.List as CL
+import qualified Filesystem.Path.CurrentOS as FP
 
 makeDirectoryFileHashTable :: FilePath -> IO [(FP.FilePath, SHA1)]
 makeDirectoryFileHashTable rootDir =

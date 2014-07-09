@@ -20,13 +20,6 @@ test_matchFilePattern =
       Right pattern2 = parseFilePattern "foo/*.cabal"
       Right pattern3 = parseFilePattern "foo/*"
 
-{-   { bf_name :: BuildFileId
-   , bf_base :: Maybe BuildFileId
-   , bf_buildFile :: FilePath
-   , bf_include :: [FilePattern]
-   } deriving (Show, Eq)
--}
-
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
     do assertEqual "foo.docker" (bf_buildFile parsed1)
