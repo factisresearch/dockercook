@@ -19,7 +19,7 @@ data BuildFile
    = BuildFile
    { bf_name :: BuildFileId
    , bf_base :: Maybe BuildFileId
-   , bf_buildFile :: FilePath
+   , bf_dockerFile :: FilePath
    , bf_include :: [FilePattern]
    } deriving (Show, Eq)
 
@@ -74,7 +74,7 @@ isValidFileNameChar c =
 pBuildFile :: BuildFileId -> Parser BuildFile
 pBuildFile fp =
     BuildFile fp <$> (optional (BuildFileId <$> (pDefFileLine "BASE" <* endOfLine)))
-                 <*> (T.unpack <$> (pDefFileLine "BUILD" <* (endOfLine <|> endOfInput)))
+                 <*> (T.unpack <$> (pDefFileLine "DOCKER" <* (endOfLine <|> endOfInput)))
                  <*> (many (pIncludeLine <* (endOfLine <|> endOfInput)))
 
 pDefFileLine :: T.Text -> Parser T.Text

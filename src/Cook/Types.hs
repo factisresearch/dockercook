@@ -1,6 +1,7 @@
 module Cook.Types where
 
 import qualified Data.ByteString as BS
+import qualified Data.Text as T
 
 data CookCmd
    = CookBuild CookConfig
@@ -20,3 +21,7 @@ data CookConfig
 newtype SHA1 =
     SHA1 { unSha1 :: BS.ByteString }
          deriving (Show, Eq)
+
+newtype DockerImage =
+    DockerImage { unDockerImage :: T.Text }
+    deriving (Show, Eq)

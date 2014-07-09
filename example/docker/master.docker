@@ -1,0 +1,3 @@
+RUN mkdir /src
+ADD hello.js /src/hello.js
+RUN jshint /src/hello.js

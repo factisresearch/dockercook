@@ -1,0 +1,4 @@
+BASE node
+DOCKER master.docker
+INCLUDE *.js
+INCLUDE static/*

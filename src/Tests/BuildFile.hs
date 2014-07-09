@@ -22,19 +22,19 @@ test_matchFilePattern =
 
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
-    do assertEqual "foo.docker" (bf_buildFile parsed1)
-       assertEqual "master.docker" (bf_buildFile parsed2)
+    do assertEqual "foo.docker" (bf_dockerFile parsed1)
+       assertEqual "master.docker" (bf_dockerFile parsed2)
        assertEqual (Just (BuildFileId "foo.build")) (bf_base parsed2)
     where
       Right parsed1 = parseBuildFileText "sample1" sampleFile1
       Right parsed2 = parseBuildFileText "sample2" sampleFile2
 
       sampleFile1 =
-          "BUILD foo.docker"
+          "DOCKER foo.docker"
       sampleFile2 =
           T.concat
           [ "BASE foo.build\n"
-          , "BUILD master.docker\n"
+          , "DOCKER master.docker\n"
           , "INCLUDE server/foo.cabal\n"
           , "INCLUDE server/*.js"
           ]
