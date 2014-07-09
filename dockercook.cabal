@@ -1,0 +1,19 @@
+name:                dockercook
+version:             0.1.0.0
+synopsis:            A build tool for multiple docker image layers
+description:         Build and manage multiple docker image layers to speed up deployment
+license:             MIT
+license-file:        LICENSE
+author:              Alexander Thiemann
+maintainer:          thiemann@factisresearch.com
+copyright:           (c) 2014 factis research GmbH
+category:            Development
+build-type:          Simple
+cabal-version:       >=1.8
+
+executable dockercook
+  main-is:             Main.hs
+  -- other-modules:       
+  build-depends:       base ==4.6.*,
+                       optparse-applicative >=0.8 && <0.9
+  hs-source-dirs:      src
