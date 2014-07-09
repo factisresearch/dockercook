@@ -8,6 +8,8 @@ where
 import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
 import Data.Char
+import Data.List (find)
+import Data.Maybe (isJust)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
@@ -22,6 +24,11 @@ data BuildFile
    , bf_dockerFile :: FilePath
    , bf_include :: [FilePattern]
    } deriving (Show, Eq)
+
+data BuildFileLine
+   = IncludeLine FilePattern
+   | BaseLine BuildFileId
+   | DockerLine FilePath
 
 newtype FilePattern
     = FilePattern { _unFilePattern :: [PatternPart] }
@@ -53,6 +60,30 @@ matchesFilePattern (FilePattern (x : xs)) fp =
                 matchesFilePattern (FilePattern xs) fp
             [] -> True -- *
 
+constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
+constructBuildFile fp theLines =
+    case dockerLine of
+      Just (DockerLine dockerImage) ->
+          foldl handleLine (Right (BuildFile (BuildFileId (T.pack fp)) Nothing dockerImage [])) theLines
+      _ -> Left "Missing DOCKER line!"
+    where
+      dockerLine =
+          find (\l -> case l of
+                        DockerLine _ -> True
+                        _ -> False) theLines
+
+      handleLine state line =
+          case state of
+            Left _ -> state
+            Right buildFile ->
+                case line of
+                  (DockerLine _) -> state
+                  (BaseLine base) ->
+                      if isJust (bf_base buildFile)
+                      then Left "Multiple BASE lines!"
+                      else Right (buildFile { bf_base = Just base })
+                  (IncludeLine pattern) ->
+                      Right (buildFile { bf_include = (pattern : bf_include buildFile) })
 
 parseBuildFile :: FilePath -> IO (Either String BuildFile)
 parseBuildFile fp =
@@ -61,7 +92,10 @@ parseBuildFile fp =
 
 parseBuildFileText :: FilePath -> T.Text -> Either String BuildFile
 parseBuildFileText fp t =
-    parseOnly (pBuildFile (BuildFileId $ T.pack fp)) t
+    case parseOnly pBuildFile t of
+      Left err -> Left err
+      Right theLines ->
+          constructBuildFile fp theLines
 
 parseFilePattern :: T.Text -> Either String FilePattern
 parseFilePattern pattern =
@@ -71,11 +105,14 @@ isValidFileNameChar :: Char -> Bool
 isValidFileNameChar c =
     isAlphaNum c || c == '.' || c == '/' || c == '\\'
 
-pBuildFile :: BuildFileId -> Parser BuildFile
-pBuildFile fp =
-    BuildFile fp <$> (optional (BuildFileId <$> (pDefFileLine "BASE" <* endOfLine)))
-                 <*> (T.unpack <$> (pDefFileLine "DOCKER" <* (endOfLine <|> endOfInput)))
-                 <*> (many (pIncludeLine <* (endOfLine <|> endOfInput)))
+pBuildFile :: Parser [BuildFileLine]
+pBuildFile =
+    many1 $
+    IncludeLine <$> (pIncludeLine <* finish) <|>
+    BaseLine <$> (BuildFileId <$> (pDefFileLine "BASE" <* finish)) <|>
+    DockerLine <$> (T.unpack <$> (pDefFileLine "DOCKER" <* finish))
+    where
+      finish = endOfLine <|> endOfInput
 
 pDefFileLine :: T.Text -> Parser T.Text
 pDefFileLine x =
