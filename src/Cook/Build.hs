@@ -6,34 +6,42 @@ module Cook.Build (cookBuild) where
 import Cook.BuildFile
 import Cook.Types
 
+import Control.Monad.IO.Class (liftIO)
 import Data.Conduit
-import System.FilePath
 import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Conduit.Filesystem as FS
 import qualified Data.Conduit.List as CL
-import qualified Filesystem.Path.CurrentOS as FP
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.ByteString.Base16 as B16
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import System.IO.Temp
-import System.Directory
+import qualified Filesystem.Path.CurrentOS as FP
+
 import Control.Monad
-import System.Process
+import System.Directory
 import System.Exit
+import System.FilePath
+import System.IO (hPutStrLn, hPutStr, stderr)
+import System.IO.Temp
+import System.Process
+
+
+info :: String -> IO ()
+info = hPutStrLn stderr
 
 quickHash :: [BS.ByteString] -> SHA1
 quickHash bsList =
     SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
 
 makeDirectoryFileHashTable :: FilePath -> IO [(FP.FilePath, SHA1)]
-makeDirectoryFileHashTable rootDir =
-    runResourceT $
-    FS.traverse False (FP.decodeString rootDir) =$= CL.mapM hashFile $$ CL.consume
+makeDirectoryFileHashTable root =
+    do info $ "Hashing directory tree at " ++ root ++ ". This will take some time..."
+       runResourceT $ FS.traverse False (FP.decodeString root) =$= CL.mapM hashFile $$ CL.consume
     where
       hashFile f =
           do bs <- FS.sourceFile f $$ CL.consume
+             liftIO $ hPutStr stderr "."
              return $ (f, quickHash bs)
 
 buildImage :: CookConfig -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
@@ -46,7 +54,7 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
              Nothing ->
                  return $ DockerImage "ubuntu:14.04" -- todo: configure this somehow
 
-       putStrLn $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
+       hPutStrLn stderr $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
        dockerBS' <- BS.readFile dockerFile
        let dockerBS =
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
@@ -58,11 +66,11 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
            buildFileHash = quickHash [BSC.pack (show bf)]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
-       putStrLn $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
-       putStrLn $ "Check if the image is already built"
+       info $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
+       info $ "Check if the image is already built"
        (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
        if ec == ExitSuccess && (T.isInfixOf (unDockerImage imageName) (T.pack stdOut))
-       then do putStrLn "The image already exists!"
+       then do info "The image already exists!"
                return imageName
        else launchImageBuilder dockerBS imageName
     where
@@ -73,16 +81,16 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
                                copySrc = FP.encodeString f
                                targetSrc = tempDir </> localName f
                            when (dirC /= "") $
-                                 do putStrLn ("mkdir -p " ++ dirC)
+                                 do info ("mkdir -p " ++ dirC)
                                     createDirectoryIfMissing True dirC
-                           putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
+                           info ("cp " ++ copySrc ++ " " ++ targetSrc)
                            copyFile copySrc targetSrc
                    ) targetedFiles
-             putStrLn "Writing Dockerfile ..."
+             info "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
-             putStrLn "Building docker container"
+             info "Building docker container"
              (ec, stdOut, stdErr) <- readProcessWithExitCode "docker" ["build", "-rm", "-t", T.unpack $ unDockerImage imageName, tempDir] ""
-             putStrLn stdOut
+             info stdOut
              if ec == ExitSuccess
              then return imageName
              else error ("Failed to build " ++ (T.unpack $ unDockerImage imageName) ++ ": " ++ stdErr)
@@ -104,7 +112,7 @@ cookBuild cfg@(CookConfig{..}) =
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
        mapM_ (buildImage cfg fileHashes) roots
-       putStrLn "All done!"
+       info "All done!"
        return ()
     where
 

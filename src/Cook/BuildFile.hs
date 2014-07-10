@@ -103,7 +103,7 @@ parseFilePattern pattern =
 
 isValidFileNameChar :: Char -> Bool
 isValidFileNameChar c =
-    isAlphaNum c || c == '.' || c == '/' || c == '\\'
+    c /= ' ' && c /= '\n' && c /= '\t'
 
 pBuildFile :: Parser [BuildFileLine]
 pBuildFile =

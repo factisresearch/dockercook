@@ -27,7 +27,8 @@ executable dockercook
                        process >=1.1 && <1.2,
                        system-filepath >=0.4 && <0.5,
                        temporary >=1.2 && <1.3,
-                       text >=1.1 && <1.2
+                       text >=1.1 && <1.2,
+                       transformers >= 0.3 && <0.4
   hs-source-dirs:      src
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 
