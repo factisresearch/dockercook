@@ -107,12 +107,20 @@ isValidFileNameChar c =
 
 pBuildFile :: Parser [BuildFileLine]
 pBuildFile =
-    many1 $
-    IncludeLine <$> (pIncludeLine <* finish) <|>
-    BaseLine <$> (BuildFileId <$> (pDefFileLine "BASE" <* finish)) <|>
-    DockerLine <$> (T.unpack <$> (pDefFileLine "DOCKER" <* finish))
+    many1 lineP
     where
-      finish = endOfLine <|> endOfInput
+      finish =
+          (optional pComment) *> (endOfLine <|> endOfInput)
+      lineP =
+          (many (pComment <* endOfLine)) *> lineP'
+      lineP' =
+          IncludeLine <$> (pIncludeLine <* finish) <|>
+          BaseLine <$> (BuildFileId <$> (pDefFileLine "BASE" <* finish)) <|>
+          DockerLine <$> (T.unpack <$> (pDefFileLine "DOCKER" <* finish))
+
+pComment :: Parser ()
+pComment =
+    (skipSpace *> char '#' *> skipSpace) *> (skipWhile (not . isEndOfLine))
 
 pDefFileLine :: T.Text -> Parser T.Text
 pDefFileLine x =

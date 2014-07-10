@@ -26,10 +26,12 @@ test_parseBuildFile =
        assertEqual "master.docker" (bf_dockerFile parsed2)
        assertEqual (Just (BuildFileId "foo.build")) (bf_base parsed2)
        assertEqual parsed2 parsed3
+       assertEqual parsed2 parsed4
     where
       Right parsed1 = parseBuildFileText "sample1" sampleFile1
       Right parsed2 = parseBuildFileText "sample2" sampleFile2
       Right parsed3 = parseBuildFileText "sample2" sampleFile3
+      Right parsed4 = parseBuildFileText "sample2" sampleFile4
 
       sampleFile1 =
           "DOCKER foo.docker"
@@ -44,6 +46,16 @@ test_parseBuildFile =
           T.concat
           [ "INCLUDE server/foo.cabal\n"
           , "BASE foo.build\n"
+          , "INCLUDE server/*.js\n"
+          , "DOCKER master.docker"
+          ]
+      sampleFile4 =
+          T.concat
+          [ "# Comment!\n"
+          , "#Comment\n"
+          , "  # Comment\n"
+          , "INCLUDE server/foo.cabal # comment\n"
+          , "BASE foo.build #comment\n"
           , "INCLUDE server/*.js\n"
           , "DOCKER master.docker"
           ]
