@@ -10,6 +10,7 @@ import Data.Attoparsec.Text hiding (take)
 import Data.Char
 import Data.List (find)
 import Data.Maybe (isJust)
+import qualified Data.Foldable as F
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
@@ -21,6 +22,7 @@ data BuildFile
    = BuildFile
    { bf_name :: BuildFileId
    , bf_base :: Maybe BuildFileId
+   , bf_autoadd :: Maybe FilePath
    , bf_dockerFile :: FilePath
    , bf_include :: [FilePattern]
    } deriving (Show, Eq)
@@ -29,6 +31,7 @@ data BuildFileLine
    = IncludeLine FilePattern
    | BaseLine BuildFileId
    | DockerLine FilePath
+   | AutoAddLine FilePath
 
 newtype FilePattern
     = FilePattern { _unFilePattern :: [PatternPart] }
@@ -64,7 +67,8 @@ constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
 constructBuildFile fp theLines =
     case dockerLine of
       Just (DockerLine dockerImage) ->
-          foldl handleLine (Right (BuildFile (BuildFileId (T.pack fp)) Nothing dockerImage [])) theLines
+          let initial = BuildFile (BuildFileId (T.pack fp)) Nothing Nothing dockerImage []
+          in F.foldl' handleLine (Right initial) theLines
       _ -> Left "Missing DOCKER line!"
     where
       dockerLine =
@@ -78,6 +82,11 @@ constructBuildFile fp theLines =
             Right buildFile ->
                 case line of
                   (DockerLine _) -> state
+                  (AutoAddLine tgt) ->
+                      -- ugly code duplication, should use lenses
+                      if isJust (bf_autoadd buildFile)
+                      then Left "Multiple AUTOADD lines!"
+                      else Right (buildFile { bf_autoadd = Just tgt })
                   (BaseLine base) ->
                       if isJust (bf_base buildFile)
                       then Left "Multiple BASE lines!"
@@ -116,7 +125,8 @@ pBuildFile =
       lineP' =
           IncludeLine <$> (pIncludeLine <* finish) <|>
           BaseLine <$> (BuildFileId <$> (pDefFileLine "BASE" <* finish)) <|>
-          DockerLine <$> (T.unpack <$> (pDefFileLine "DOCKER" <* finish))
+          DockerLine <$> (T.unpack <$> (pDefFileLine "DOCKER" <* finish)) <|>
+          AutoAddLine <$> (T.unpack <$> (pDefFileLine "AUTOADD" <* finish))
 
 pComment :: Parser ()
 pComment =

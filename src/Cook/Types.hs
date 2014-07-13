@@ -15,6 +15,7 @@ data CookConfig
    , cc_dataDir :: FilePath
    , cc_dockerFileDir :: FilePath
    , cc_buildFileDir :: FilePath
+   , cc_boringFile :: Maybe FilePath
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 

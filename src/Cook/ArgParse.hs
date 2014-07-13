@@ -18,6 +18,10 @@ cookBuildP =
 cookEntryPointP =
     some $ strOption ( long "entrypoint" <> short 'p' <> metavar "ENTRYPOINT" <> help "")
 
+cookBoringP =
+    optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
+                           <> help "File with regex list of ignored files." )
+
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
@@ -25,6 +29,7 @@ cookOptions =
                 <*> cookDataP
                 <*> cookDockerP
                 <*> cookBuildP
+                <*> cookBoringP
                 <*> cookEntryPointP)
 
 cookClean :: Parser CookCmd

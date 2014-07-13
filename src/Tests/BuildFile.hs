@@ -15,6 +15,7 @@ test_matchFilePattern =
        assertBool (not $ matchesFilePattern pattern2 "foo/hellooooo.cabal.xzy")
        assertBool (not $ matchesFilePattern pattern2 "foo/hellooooo.xzy")
        assertBool (matchesFilePattern pattern3 "foo/asdasdas")
+       assertBool (matchesFilePattern pattern3 "foo/bar/asdasdas")
     where
       Right pattern1 = parseFilePattern "foo/bar.cabal"
       Right pattern2 = parseFilePattern "foo/*.cabal"
