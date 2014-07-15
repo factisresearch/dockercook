@@ -39,7 +39,9 @@ executable dockercook
                        safecopy >=0.8 && <0.9,
                        time >=1.4 && <1.5,
                        stm >=2.4 && <2.5,
-                       hashable >=1.2 && <1.3
+                       hashable >=1.2 && <1.3,
+                       vector >=0.10 && <0.11,
+                       unordered-containers >=0.2 && <0.3
   hs-source-dirs:      src
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 
@@ -48,7 +50,7 @@ test-suite dockercook-test
   hs-source-dirs:      src
   main-is:             Tests.hs
   -- other-modules:       Tests.Routing
-  build-depends:       HTF ==0.11.*,
+  build-depends:       HTF >=0.11 && <0.13,
                        base ==4.6.*,
                        attoparsec >=0.11 && <0.12,
                        base16-bytestring >=0.1 && <0.2,
@@ -73,5 +75,7 @@ test-suite dockercook-test
                        safecopy >=0.8 && <0.9,
                        time >=1.4 && <1.5,
                        stm >=2.4 && <2.5,
-                       hashable >=1.2 && <1.3
+                       hashable >=1.2 && <1.3,
+                       vector >=0.10 && <0.11,
+                       unordered-containers >=0.2 && <0.3
   ghc-options: -Wall -fno-warn-orphans

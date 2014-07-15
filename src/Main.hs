@@ -11,8 +11,8 @@ runProg cmd =
     case cmd of
       CookBuild buildCfg ->
           cookBuild buildCfg
-      CookClean stateFile ->
-          cookClean stateFile
+      CookClean stateDir ->
+          cookClean stateDir
       CookList ->
           do putStrLn "Available commands:"
              putStrLn "- cook"

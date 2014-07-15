@@ -19,5 +19,6 @@ DbDockerImage
     usageCount Int
     nodeId Int
     UniqueDbDockerImage name
+    UniqueGraphNodeId nodeId
     deriving Show
 |]

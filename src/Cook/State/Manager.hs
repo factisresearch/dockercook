@@ -2,18 +2,21 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DoAndIfThenElse #-}
 module Cook.State.Manager
     ( StateManager
     , createStateManager, markUsingImage
+    , garbageCollectImages
     )
 where
 
+import Cook.Util
 import Cook.State.Model
 import Cook.Types
 
 import Control.Applicative
 import Control.Concurrent.STM
-import Control.Monad.Logger
+import Control.Monad.Logger hiding (logInfo)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
 import Data.SafeCopy (safeGet, safePut)
@@ -24,11 +27,13 @@ import Database.Persist.Sqlite
 import System.Directory
 import System.FilePath
 import qualified Data.ByteString as BS
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Graph as G
 import qualified Data.Graph.NodeManager as NM
 import qualified Data.Graph.Persistence as GP
 import qualified Data.Text as T
 import qualified Data.Traversable as T
+import qualified Data.Vector.Unboxed as VU
 
 data StateManager
    = StateManager
@@ -69,6 +74,115 @@ createStateManager stateDirectory =
           do nm <- atomically $ readTVar nmVar
              g <- atomically $ readTVar gVar
              BS.writeFile graphFile $ runPut (safePut $ GP.persistGraph nm g)
+
+data GCState
+   = GCState
+   { gc_canTrash :: !(HM.HashMap NM.Node (Bool, DockerImage))
+   , gc_trashCount :: !Int
+   , gc_cache :: !(HM.HashMap DockerImage DbDockerImage)
+   } deriving (Show)
+
+data SweepState
+   = SweepState
+   { ss_graph :: !(G.Graph)
+   , ss_removedImages :: [DockerImage]
+   } deriving (Show)
+
+garbageCollectImages :: StateManager
+                     -> (DbDockerImage -> Bool)
+                     -> (DockerImage -> IO ())
+                     -> IO [DockerImage]
+garbageCollectImages (StateManager{..}) deletePred deleteFun =
+    do graph <- atomically $ readTVar sm_graph
+       nodeManager <- atomically $ readTVar sm_nodeManager
+       let graphLeafs = filter (\n -> VU.null $ G.parents graph n) (G.nodes graph)
+       logInfo ("Found " ++ (show (length graphLeafs)) ++ " toplevel image(s). Starting mark and sweep")
+       gcState <- execStateT (mapM (markNode graph nodeManager) graphLeafs) (GCState HM.empty 0 HM.empty)
+       logInfo ("Found " ++ (show (gc_trashCount gcState)) ++ " deletable image(s).")
+       sweepState <- execStateT (sweepNodes gcState nodeManager graphLeafs) (SweepState graph [])
+       return (reverse $ ss_removedImages sweepState)
+    where
+      sweepNodes :: GCState -> NM.NodeManager DockerImage -> [NM.Node] -> StateT SweepState IO ()
+      sweepNodes gcState nodeManager [] =
+          do currentGraph <- gets ss_graph
+             alreadyRemoved <- gets ss_removedImages
+             let nextLeafs =
+                     filter (\n ->
+                                 let isLeaf = VU.null $ G.parents currentGraph n
+                                     trashable =
+                                         case HM.lookup n (gc_canTrash gcState) of
+                                           Just (True, imageName) ->
+                                               not $ imageName `elem` alreadyRemoved
+                                           _ -> False
+                                 in isLeaf && trashable
+                            ) (G.nodes currentGraph)
+             if length nextLeafs == 0
+             then return ()
+             else sweepNodes gcState nodeManager nextLeafs
+      sweepNodes gcState nodeManager (node:rest) =
+          do currentGraph <- gets ss_graph
+             case HM.lookup node (gc_canTrash gcState) of
+               Just (True, imageName) ->
+                   do let rmEdges = map (\par -> G.Edge node par) $ VU.toList $ G.children currentGraph node
+                          g' = G.removeEdges rmEdges currentGraph
+                      liftIO $
+                          do deleteFun imageName
+                             sm_runSql $ deleteBy (UniqueGraphNodeId node)
+                             atomically $ writeTVar sm_graph g'
+                             sm_persistGraph
+                      modify $ \st ->
+                          st
+                          { ss_graph = g'
+                          , ss_removedImages = (imageName : ss_removedImages st)
+                          }
+                      sweepNodes gcState nodeManager rest
+               _ ->
+                   sweepNodes gcState nodeManager rest
+
+      markNode :: G.Graph -> NM.NodeManager DockerImage -> NM.Node -> StateT GCState IO Bool
+      markNode graph nodeManager node =
+          do let dockerImage =
+                     case NM.lookupNode node nodeManager of
+                       Nothing ->
+                           error ("dockercook inconsistency: found node in image graph without any dockerimage!")
+                       Just d -> d
+                 children = G.children graph node
+                 trashCheck (Just False) _ = return (Just False)
+                 trashCheck x [] = return x
+                 trashCheck _ (x:xs) =
+                     do trashState <- gets gc_canTrash
+                        r <-
+                            case HM.lookup x trashState of
+                              Nothing -> markNode graph nodeManager x
+                              Just (v, _) -> return v
+                        trashCheck (Just r) xs
+                 markAs x =
+                     do modify $ \s ->
+                            s { gc_canTrash = HM.insert node (x, dockerImage) (gc_canTrash s)
+                              , gc_trashCount = (if x then 1 else 0) + (gc_trashCount s)
+                              }
+                        return x
+             mCanTrash <- trashCheck Nothing $ VU.toList children
+             case mCanTrash of
+               Just False ->
+                   markAs False
+               _ ->
+                   do cacheMap <- gets gc_cache
+                      dbInfo <-
+                          case HM.lookup dockerImage cacheMap of
+                            Nothing ->
+                                do mDbInfo <- liftIO $ sm_runSql $ getBy (UniqueGraphNodeId node)
+                                   case mDbInfo of
+                                     Nothing ->
+                                         error ("dockercook inconsistency: found node in image graph without any meta data!")
+                                     Just someInfo ->
+                                         do let e = entityVal someInfo
+                                            modify $ \s ->
+                                               s { gc_cache = HM.insert dockerImage e (gc_cache s) }
+                                            return e
+                            Just info ->
+                                return info
+                      markAs $ deletePred dbInfo
 
 
 markUsingImage :: StateManager -> DockerImage -> Maybe DockerImage -> IO ()

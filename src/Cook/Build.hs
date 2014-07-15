@@ -6,9 +6,17 @@ module Cook.Build (cookBuild) where
 import Cook.BuildFile
 import Cook.State.Manager
 import Cook.Types
+import Cook.Util
 
+import Control.Monad
 import Control.Monad.IO.Class (liftIO)
 import Data.Conduit
+import System.Directory
+import System.Exit
+import System.FilePath
+import System.IO (hPutStrLn, hPutStr, stderr)
+import System.IO.Temp
+import System.Process
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -19,25 +27,13 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Filesystem.Path.CurrentOS as FP
 
-import Control.Monad
-import System.Directory
-import System.Exit
-import System.FilePath
-import System.IO (hPutStrLn, hPutStr, stderr)
-import System.IO.Temp
-import System.Process
-
-
-info :: String -> IO ()
-info = hPutStrLn stderr
-
 quickHash :: [BS.ByteString] -> SHA1
 quickHash bsList =
     SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
 
 makeDirectoryFileHashTable :: FilePath -> IO [(FP.FilePath, SHA1)]
 makeDirectoryFileHashTable root =
-    do info $ "Hashing directory tree at " ++ root ++ ". This will take some time..."
+    do logInfo $ "Hashing directory tree at " ++ root ++ ". This will take some time..."
        runResourceT $ FS.traverse False (FP.decodeString root) =$= CL.mapM hashFile $$ CL.consume
     where
       hashFile f =
@@ -69,15 +65,17 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
            buildFileHash = quickHash [BSC.pack (show bf)]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
-       info $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
-       markUsingImage stateManager imageName (Just baseImage)
-
-       info $ "Check if the image is already built"
+       logInfo $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
+       logInfo $ "Check if the image is already built"
+       let markImage = markUsingImage stateManager imageName (Just baseImage)
        (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
        if ec == ExitSuccess && (T.isInfixOf (unDockerImage imageName) (T.pack stdOut))
-       then do info "The image already exists!"
+       then do logInfo "The image already exists!"
+               markImage
                return imageName
-       else launchImageBuilder dockerBS imageName
+       else do im <- launchImageBuilder dockerBS imageName
+               markImage
+               return im
     where
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory "cook-docker-build" $ \tempDir ->
@@ -86,16 +84,16 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                                copySrc = FP.encodeString f
                                targetSrc = tempDir </> localName f
                            when (dirC /= "") $
-                                 do info ("mkdir -p " ++ dirC)
+                                 do logInfo ("mkdir -p " ++ dirC)
                                     createDirectoryIfMissing True dirC
-                           info ("cp " ++ copySrc ++ " " ++ targetSrc)
+                           logInfo ("cp " ++ copySrc ++ " " ++ targetSrc)
                            copyFile copySrc targetSrc
                    ) targetedFiles
-             info "Writing Dockerfile ..."
+             logInfo "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
-             info "Building docker container"
+             logInfo "Building docker container"
              (ec, stdOut, stdErr) <- readProcessWithExitCode "docker" ["build", "-rm", "-t", T.unpack $ unDockerImage imageName, tempDir] ""
-             info stdOut
+             logInfo stdOut
              if ec == ExitSuccess
              then return imageName
              else error ("Failed to build " ++ (T.unpack $ unDockerImage imageName) ++ ": " ++ stdErr)
@@ -118,7 +116,7 @@ cookBuild cfg@(CookConfig{..}) =
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
        mapM_ (buildImage cfg stateManager fileHashes) roots
-       info "All done!"
+       logInfo "All done!"
        return ()
     where
 
