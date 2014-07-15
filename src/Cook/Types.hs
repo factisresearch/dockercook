@@ -8,7 +8,7 @@ import qualified Data.Text as T
 
 data CookCmd
    = CookBuild CookConfig
-   | CookClean FilePath
+   | CookClean FilePath Int
    | CookList
    deriving (Show, Eq)
 

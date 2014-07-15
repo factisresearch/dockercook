@@ -3,6 +3,9 @@ module Cook.ArgParse (argParse) where
 import Cook.Types
 import Options.Applicative
 
+cookKeepDaysP =
+    option ( long "keep" <> short 'k' <> metavar "DAYS" <> help "Days of docker images to keep")
+
 cookStateP =
     strOption ( long "state" <> short 's' <> metavar "DIRECTORY" <> help "Directory where dockercook stores its meta info")
 
@@ -29,7 +32,7 @@ cookOptions =
 
 cookClean :: Parser CookCmd
 cookClean =
-    CookClean <$> cookStateP
+    CookClean <$> cookStateP <*> cookKeepDaysP
 
 cookHelp :: Parser CookCmd
 cookHelp =

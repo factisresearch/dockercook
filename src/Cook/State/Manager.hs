@@ -90,7 +90,7 @@ data SweepState
 
 garbageCollectImages :: StateManager
                      -> (DbDockerImage -> Bool)
-                     -> (DockerImage -> IO ())
+                     -> (DockerImage -> IO Bool)
                      -> IO [DockerImage]
 garbageCollectImages (StateManager{..}) deletePred deleteFun =
     do graph <- atomically $ readTVar sm_graph
@@ -126,7 +126,9 @@ garbageCollectImages (StateManager{..}) deletePred deleteFun =
                    do let rmEdges = map (\par -> G.Edge node par) $ VU.toList $ G.children currentGraph node
                           g' = G.removeEdges rmEdges currentGraph
                       liftIO $
-                          do deleteFun imageName
+                          do deleteOk <- deleteFun imageName
+                             when (not deleteOk) $
+                                  error ("Failed to delete " ++ (T.unpack $ unDockerImage imageName) ++ ". Aborting!")
                              sm_runSql $ deleteBy (UniqueGraphNodeId node)
                              atomically $ writeTVar sm_graph g'
                              sm_persistGraph
