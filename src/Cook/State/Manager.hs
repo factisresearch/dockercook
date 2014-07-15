@@ -123,21 +123,23 @@ garbageCollectImages (StateManager{..}) deletePred deleteFun =
           do currentGraph <- gets ss_graph
              case HM.lookup node (gc_canTrash gcState) of
                Just (True, imageName) ->
-                   do let rmEdges = map (\par -> G.Edge node par) $ VU.toList $ G.children currentGraph node
-                          g' = G.removeEdges rmEdges currentGraph
+                   do let g' = G.removeNode node currentGraph
+                          nm' = NM.removeNodeHandle node nodeManager
                       liftIO $
                           do deleteOk <- deleteFun imageName
                              when (not deleteOk) $
                                   error ("Failed to delete " ++ (T.unpack $ unDockerImage imageName) ++ ". Aborting!")
-                             sm_runSql $ deleteBy (UniqueGraphNodeId node)
-                             atomically $ writeTVar sm_graph g'
+                             atomically $
+                                   do writeTVar sm_nodeManager nm'
+                                      writeTVar sm_graph g'
                              sm_persistGraph
+                             sm_runSql $ deleteBy (UniqueGraphNodeId node)
                       modify $ \st ->
                           st
                           { ss_graph = g'
                           , ss_removedImages = (imageName : ss_removedImages st)
                           }
-                      sweepNodes gcState nodeManager rest
+                      sweepNodes gcState nm' rest
                _ ->
                    sweepNodes gcState nodeManager rest
 
