@@ -4,6 +4,7 @@
 module Cook.Build (cookBuild) where
 
 import Cook.BuildFile
+import Cook.State.Manager
 import Cook.Types
 
 import Control.Monad.IO.Class (liftIO)
@@ -44,15 +45,17 @@ makeDirectoryFileHashTable root =
              liftIO $ hPutStr stderr "."
              return $ (f, quickHash bs)
 
-buildImage :: CookConfig -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
-buildImage cfg@(CookConfig{..}) fileHashes bf =
+buildImage :: CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
+buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
     do baseImage <-
            case bf_base bf of
              Just parentBuildFile ->
                  do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
-                    buildImage cfg fileHashes parent
+                    buildImage cfg stateManager fileHashes parent
              Nothing ->
-                 return $ DockerImage "ubuntu:14.04" -- todo: configure this somehow
+                 do let rootImage = DockerImage "ubuntu:14.04" -- todo: configure this somehow
+                    markUsingImage stateManager rootImage Nothing
+                    return rootImage
 
        hPutStrLn stderr $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
        dockerBS' <- BS.readFile dockerFile
@@ -67,6 +70,8 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
        info $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
+       markUsingImage stateManager imageName (Just baseImage)
+
        info $ "Check if the image is already built"
        (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
        if ec == ExitSuccess && (T.isInfixOf (unDockerImage imageName) (T.pack stdOut))
@@ -108,10 +113,11 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
 
 cookBuild :: CookConfig -> IO ()
 cookBuild cfg@(CookConfig{..}) =
-    do fileHashes <- makeDirectoryFileHashTable cc_dataDir
+    do stateManager <- createStateManager cc_stateDir
+       fileHashes <- makeDirectoryFileHashTable cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
-       mapM_ (buildImage cfg fileHashes) roots
+       mapM_ (buildImage cfg stateManager fileHashes) roots
        info "All done!"
        return ()
     where

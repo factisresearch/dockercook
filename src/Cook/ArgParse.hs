@@ -4,7 +4,7 @@ import Cook.Types
 import Options.Applicative
 
 cookStateP =
-    strOption ( long "state" <> short 's' <> metavar "FILENAME" <> help "File where dockercook stores its meta info")
+    strOption ( long "state" <> short 's' <> metavar "DIRECTORY" <> help "Directory where dockercook stores its meta info")
 
 cookDataP =
     strOption ( long "data" <> short 'd' <> metavar "DIRECTORY" <> help "Directory where to find ")
