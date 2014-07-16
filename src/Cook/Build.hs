@@ -65,6 +65,7 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
        logInfo $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
+       logInfo $ BSC.unpack dockerBS
        logInfo $ "Check if the image is already built"
        let markImage = markUsingImage stateManager imageName (Just baseImage)
        (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""

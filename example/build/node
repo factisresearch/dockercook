@@ -1,3 +1,3 @@
-BASE DOCKER ubuntu:14.0
+BASE DOCKER ubuntu:14.04
 RUN apt-get install -y node
 RUN npm install jshint

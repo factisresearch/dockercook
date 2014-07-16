@@ -57,7 +57,7 @@ data PatternPart
 
 dockerCmdToText :: DockerCommand -> T.Text
 dockerCmdToText (DockerCommand cmd args) =
-    T.concat [cmd, args]
+    T.concat [cmd, " ", args]
 
 matchesFilePattern :: FilePattern -> FilePath -> Bool
 matchesFilePattern (FilePattern []) [] = True

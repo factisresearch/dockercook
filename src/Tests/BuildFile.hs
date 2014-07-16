@@ -60,6 +60,7 @@ test_parseBuildFile =
           , "INCLUDE server/foo.cabal # comment\n"
           , "INCLUDE server/*.js\n"
           , "RUN apt-get -y install node # comment\n"
-          , "ADD . /foo"
-          , "# comment"
+          , "ADD . /foo\n"
+          , "# comment\n"
+          , "\n"
           ]
