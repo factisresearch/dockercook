@@ -125,7 +125,7 @@ pBuildFile =
     many1 lineP
     where
       finish =
-          (optional pComment) *> (endOfLine <|> endOfInput)
+          (optional pComment) *> ((() <$ many endOfLine) <|> endOfInput)
       lineP =
           (many (pComment <* endOfLine)) *> lineP'
       lineP' =

@@ -56,7 +56,7 @@ test_parseBuildFile =
           [ "# Comment!\n"
           , "#Comment\n"
           , "  # Comment\n"
-          , "BASE COOK foo.build\n"
+          , "BASE COOK foo.build\n\n"
           , "INCLUDE server/foo.cabal # comment\n"
           , "INCLUDE server/*.js\n"
           , "RUN apt-get -y install node # comment\n"
