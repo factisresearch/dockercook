@@ -3,8 +3,10 @@
 module Tests.BuildFile (htf_thisModulesTests) where
 
 import Cook.BuildFile
+import Cook.Types
 
 import Test.Framework
+import qualified Data.Vector as V
 import qualified Data.Text as T
 
 test_matchFilePattern :: IO ()
@@ -22,47 +24,42 @@ test_matchFilePattern =
 
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
-    do assertEqual "foo.docker" (bf_dockerFile parsed1)
-       assertEqual "master.docker" (bf_dockerFile parsed2)
-       assertEqual (Just (BuildFileId "foo.build")) (bf_base parsed2)
-       assertEqual parsed2 parsed3
-       assertEqual parsed2 parsed4
-       assertEqual parsed2 parsed5
+    do assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
+       assertEqual parsed1 parsed2
+       assertEqual (BuildBaseCook $ BuildFileId "foo.build") (bf_base parsed3)
+       assertEqual commands (bf_dockerCommands parsed3)
+       assertEqual parsed3 parsed4
     where
+      commands =
+          V.fromList [ DockerCommand "RUN" "apt-get -y install node"
+                     , DockerCommand "ADD" ". /foo"
+                     ]
       Right parsed1 = parseBuildFileText "sample1" sampleFile1
-      Right parsed2 = parseBuildFileText "sample2" sampleFile2
-      Right parsed3 = parseBuildFileText "sample2" sampleFile3
-      Right parsed4 = parseBuildFileText "sample2" sampleFile4
-      Right parsed5 = parseBuildFileText "sample2" sampleFile5
+      Right parsed2 = parseBuildFileText "sample1" sampleFile2
+      Right parsed3 = parseBuildFileText "sample3" sampleFile3
+      Right parsed4 = parseBuildFileText "sample3" sampleFile4
 
       sampleFile1 =
-          "DOCKER foo.docker"
+          "BASE DOCKER ubuntu:14.04"
       sampleFile2 =
-          T.concat
-          [ "BASE foo.build\n"
-          , "DOCKER master.docker\n"
-          , "INCLUDE server/foo.cabal\n"
-          , "INCLUDE server/*.js"
-          ]
+          "BASE DOCKER ubuntu:14.04#asdf"
       sampleFile3 =
           T.concat
-          [ "INCLUDE server/foo.cabal\n"
-          , "BASE foo.build\n"
+          [ "BASE COOK foo.build\n"
+          , "INCLUDE server/foo.cabal\n"
           , "INCLUDE server/*.js\n"
-          , "DOCKER master.docker"
+          , "RUN apt-get -y install node\n"
+          , "ADD . /foo"
           ]
       sampleFile4 =
           T.concat
           [ "# Comment!\n"
           , "#Comment\n"
           , "  # Comment\n"
+          , "BASE COOK foo.build\n"
           , "INCLUDE server/foo.cabal # comment\n"
-          , "BASE foo.build #comment\n"
           , "INCLUDE server/*.js\n"
-          , "DOCKER master.docker"
-          ]
-      sampleFile5 =
-          T.concat
-          [ sampleFile4, "\n"
-          , "#tailing comment"
+          , "RUN apt-get -y install node # comment\n"
+          , "ADD . /foo"
+          , "# comment"
           ]

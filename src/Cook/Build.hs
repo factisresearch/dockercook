@@ -23,6 +23,7 @@ import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Conduit.Filesystem as FS
 import qualified Data.Conduit.List as CL
+import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Filesystem.Path.CurrentOS as FP
@@ -45,20 +46,18 @@ buildImage :: CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -
 buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
     do baseImage <-
            case bf_base bf of
-             Just parentBuildFile ->
+             (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
                     buildImage cfg stateManager fileHashes parent
-             Nothing ->
-                 do let rootImage = DockerImage "ubuntu:14.04" -- todo: configure this somehow
-                    markUsingImage stateManager rootImage Nothing
+             (BuildBaseDocker rootImage) ->
+                 do markUsingImage stateManager rootImage Nothing
                     return rootImage
 
        hPutStrLn stderr $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
-       dockerBS' <- BS.readFile dockerFile
        let dockerBS =
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
                           , "MAINTAINER dockercook <thiemann@cp-med.com>\n"
-                          , dockerBS'
+                          , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText (bf_dockerCommands bf)
                           ]
            dockerHash = quickHash [dockerBS]
            allFHashes = map snd targetedFiles
@@ -100,12 +99,10 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
 
       localName fp =
            drop (1 + (length cc_dataDir)) $ FP.encodeString fp
-      dockerFile =
-          cc_dockerFileDir </> (bf_dockerFile bf)
       matchesFile fp pattern =
           matchesFilePattern pattern (localName fp)
       isNeededHash fp =
-          or (map (matchesFile fp) (bf_include bf))
+          or $ V.toList (V.map (matchesFile fp) (bf_include bf))
       targetedFiles =
           filter (\(fp, _) -> isNeededHash fp) fileHashes
 

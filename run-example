@@ -1,2 +1,2 @@
 #!/bin/bash
-dist/build/dockercook/dockercook cook -s example/state -d example/repo -f example/docker -b example/build -p project
+dist/build/dockercook/dockercook cook -s example/state -d example/repo -b example/build -p project

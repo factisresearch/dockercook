@@ -10,23 +10,19 @@ cookStateP =
     strOption ( long "state" <> short 's' <> metavar "DIRECTORY" <> help "Directory where dockercook stores its meta info")
 
 cookDataP =
-    strOption ( long "data" <> short 'd' <> metavar "DIRECTORY" <> help "Directory where to find ")
-
-cookDockerP =
-    strOption ( long "dockerfiles" <> short 'f' <> metavar "DIRECTORY" <> help "")
+    strOption ( long "data" <> short 'd' <> metavar "DIRECTORY" <> help "Directory where to find source files")
 
 cookBuildP =
-    strOption ( long "buildfiles" <> short 'b' <> metavar "DIRECTORY" <> help "")
+    strOption ( long "buildfiles" <> short 'b' <> metavar "DIRECTORY" <> help "Directory of dockercook files")
 
 cookEntryPointP =
-    some $ strOption ( long "entrypoint" <> short 'p' <> metavar "ENTRYPOINT" <> help "")
+    some $ strOption ( long "entrypoint" <> short 'p' <> metavar "ENTRYPOINT" <> help "dockercook targets")
 
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
     (CookConfig <$> cookStateP
                 <*> cookDataP
-                <*> cookDockerP
                 <*> cookBuildP
                 <*> cookEntryPointP)
 

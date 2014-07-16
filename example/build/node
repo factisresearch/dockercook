@@ -1,1 +1,3 @@
-DOCKER node.docker
+BASE DOCKER ubuntu:14.0
+RUN apt-get install -y node
+RUN npm install jshint
