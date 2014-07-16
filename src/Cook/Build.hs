@@ -77,7 +77,7 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
            autoadd
                | Just base <- bf_autoadd bf =
                    [ BSC.pack ("RUN mkdir -p " ++ base ++ "\n")
-                   , BSC.pack ("ADD context.tar.gz " ++ base ++ "\n")
+                   , BSC.pack ("ADD context.tar.bz2 " ++ base ++ "\n")
                    ]
                | otherwise = []
            dockerBS =
@@ -106,7 +106,7 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
           withSystemTempDirectory "cook-docker-build" $ \tempDir ->
           do let tarCmd =
                      concat $
-                     [ "tar cjf ", tempDir </> "context.tar.gz", " -C ", cc_dataDir, " "
+                     [ "tar cjf ", tempDir </> "context.tar.bz2", " -C ", cc_dataDir, " "
                      ] ++ intersperse " " (map (FP.encodeString . localName . fst) targetedFiles)
              unless (null targetedFiles) $
                     do ecTar <- system tarCmd
