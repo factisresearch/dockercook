@@ -1,9 +1,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Cook.BuildFile
-    ( BuildFileId(..), BuildFile(..), parseBuildFile, parseBuildFileText
+    ( BuildFileId(..), BuildFile(..), BuildBase(..), DockerCommand(..)
+    , dockerCmdToText
+    , parseBuildFile, parseBuildFileText
     , FilePattern, matchesFilePattern, parseFilePattern
     )
 where
+
+import Cook.Types
 
 import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
@@ -11,6 +15,7 @@ import Data.Char
 import Data.List (find)
 import Data.Maybe (isJust)
 import qualified Data.Foldable as F
+import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 
@@ -21,17 +26,27 @@ newtype BuildFileId
 data BuildFile
    = BuildFile
    { bf_name :: BuildFileId
-   , bf_base :: Maybe BuildFileId
-   , bf_autoadd :: Maybe FilePath
-   , bf_dockerFile :: FilePath
-   , bf_include :: [FilePattern]
+   , bf_base :: BuildBase
+   , bf_dockerCommands :: V.Vector DockerCommand
+   , bf_include :: V.Vector FilePattern
    } deriving (Show, Eq)
+
+data BuildBase
+   = BuildBaseDocker DockerImage
+   | BuildBaseCook BuildFileId
+   deriving (Show, Eq)
 
 data BuildFileLine
    = IncludeLine FilePattern
-   | BaseLine BuildFileId
-   | DockerLine FilePath
-   | AutoAddLine FilePath
+   | BaseLine BuildBase
+   | DockerLine DockerCommand
+   deriving (Show, Eq)
+
+data DockerCommand
+   = DockerCommand
+   { dc_command :: T.Text
+   , dc_args :: T.Text
+   } deriving (Show, Eq)
 
 newtype FilePattern
     = FilePattern { _unFilePattern :: [PatternPart] }
@@ -41,6 +56,10 @@ data PatternPart
    = PatternText String
    | PatternWildCard
    deriving (Show, Eq)
+
+dockerCmdToText :: DockerCommand -> T.Text
+dockerCmdToText (DockerCommand cmd args) =
+    T.concat [cmd, " ", args]
 
 matchesFilePattern :: FilePattern -> FilePath -> Bool
 matchesFilePattern (FilePattern []) [] = True
@@ -65,34 +84,23 @@ matchesFilePattern (FilePattern (x : xs)) fp =
 
 constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
 constructBuildFile fp theLines =
-    case dockerLine of
-      Just (DockerLine dockerImage) ->
-          let initial = BuildFile (BuildFileId (T.pack fp)) Nothing Nothing dockerImage []
-          in F.foldl' handleLine (Right initial) theLines
-      _ -> Left "Missing DOCKER line!"
+    case baseLine of
+      Just (BaseLine base) ->
+          Right $ foldl handleLine (BuildFile (BuildFileId (T.pack fp)) base V.empty V.empty) theLines
+      _ -> Left "Missing BASE line!"
     where
-      dockerLine =
-          find (\l -> case l of
-                        DockerLine _ -> True
-                        _ -> False) theLines
-
-      handleLine state line =
-          case state of
-            Left _ -> state
-            Right buildFile ->
-                case line of
-                  (DockerLine _) -> state
-                  (AutoAddLine tgt) ->
-                      -- ugly code duplication, should use lenses
-                      if isJust (bf_autoadd buildFile)
-                      then Left "Multiple AUTOADD lines!"
-                      else Right (buildFile { bf_autoadd = Just tgt })
-                  (BaseLine base) ->
-                      if isJust (bf_base buildFile)
-                      then Left "Multiple BASE lines!"
-                      else Right (buildFile { bf_base = Just base })
-                  (IncludeLine pattern) ->
-                      Right (buildFile { bf_include = (pattern : bf_include buildFile) })
+      baseLine =
+          flip find theLines $ \l ->
+              case l of
+                BaseLine _ -> True
+                _ -> False
+      handleLine buildFile line =
+          case line of
+            (DockerLine dockerCmd) ->
+                buildFile { bf_dockerCommands = (V.snoc (bf_dockerCommands buildFile) dockerCmd) }
+            (IncludeLine pattern) ->
+                  buildFile { bf_include = (V.snoc (bf_include buildFile) pattern) }
+            _ -> buildFile
 
 parseBuildFile :: FilePath -> IO (Either String BuildFile)
 parseBuildFile fp =
@@ -119,22 +127,34 @@ pBuildFile =
     many1 lineP
     where
       finish =
-          (optional pComment) *> (endOfLine <|> endOfInput)
+          (optional pComment) *> ((() <$ many endOfLine) <|> endOfInput)
       lineP =
           (many (pComment <* endOfLine)) *> lineP'
       lineP' =
           IncludeLine <$> (pIncludeLine <* finish) <|>
-          BaseLine <$> (BuildFileId <$> (pDefFileLine "BASE" <* finish)) <|>
-          DockerLine <$> (T.unpack <$> (pDefFileLine "DOCKER" <* finish)) <|>
-          AutoAddLine <$> (T.unpack <$> (pDefFileLine "AUTOADD" <* finish))
+          BaseLine <$> (pBuildBase <* finish) <|>
+          DockerLine <$> (pDockerCommand <* finish)
+
+pBuildBase :: Parser BuildBase
+pBuildBase =
+    (asciiCI "BASE" *> skipSpace) *> pBase
+    where
+      pBase =
+          BuildBaseDocker <$> (asciiCI "DOCKER" *> skipSpace *> (DockerImage <$> takeWhile1 (not . eolOrComment))) <|>
+          BuildBaseCook <$> (asciiCI "COOK" *> skipSpace *> (BuildFileId <$> takeWhile1 isValidFileNameChar))
+
+pDockerCommand :: Parser DockerCommand
+pDockerCommand =
+    DockerCommand <$> (takeWhile1 isAlpha <* skipSpace)
+                  <*> (T.stripEnd <$> takeWhile1 (not . eolOrComment))
+
+eolOrComment :: Char -> Bool
+eolOrComment x =
+    isEndOfLine x || x == '#'
 
 pComment :: Parser ()
 pComment =
     (skipSpace *> char '#' *> skipSpace) *> (skipWhile (not . isEndOfLine))
-
-pDefFileLine :: T.Text -> Parser T.Text
-pDefFileLine x =
-    (asciiCI x *> skipSpace) *> takeWhile1 isValidFileNameChar
 
 pIncludeLine :: Parser FilePattern
 pIncludeLine =

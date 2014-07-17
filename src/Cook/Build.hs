@@ -6,29 +6,32 @@
 module Cook.Build (cookBuild) where
 
 import Cook.BuildFile
+import Cook.State.Manager
 import Cook.Types
+import Cook.Util
 
+import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Resource (runResourceT)
 import Data.Conduit
-import qualified Crypto.Hash.SHA1 as SHA1
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Base16 as B16
-import qualified Data.ByteString.Char8 as BSC
-import qualified Data.Conduit.Combinators as C
-import qualified Data.Text as T
-import qualified Data.Text.Encoding as T
-import qualified Data.Text.IO as T
-import qualified Filesystem.Path.CurrentOS as FP
-
-import Control.Monad
-import Data.Maybe (fromMaybe, isJust)
-import Data.List (intersperse)
 import System.Exit
 import System.FilePath
 import System.IO (hPutStrLn, hPutStr, stderr)
 import System.IO.Temp
 import System.Process
+import qualified Crypto.Hash.SHA1 as SHA1
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as B16
+import qualified Data.ByteString.Char8 as BSC
+import qualified Data.Conduit.Combinators as C
+import qualified Data.Vector as V
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
+import qualified Filesystem.Path.CurrentOS as FP
+
+import Data.Maybe (fromMaybe, isJust)
+import Data.List (intersperse)
 import Text.Regex (mkRegex, matchRegex)
 import qualified Data.Traversable as T
 
@@ -61,32 +64,22 @@ makeDirectoryFileHashTable ignore (FP.decodeString -> root) =
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, quickHash bs)
 
-buildImage :: CookConfig -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
-buildImage cfg@(CookConfig{..}) fileHashes bf =
+buildImage :: CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
+buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
     do baseImage <-
            case bf_base bf of
-             Just parentBuildFile ->
+             (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
-                    buildImage cfg fileHashes parent
-             Nothing ->
-                 return $ DockerImage "ubuntu:14.04" -- todo: configure this somehow
+                    buildImage cfg stateManager fileHashes parent
+             (BuildBaseDocker rootImage) ->
+                 do markUsingImage stateManager rootImage Nothing
+                    return rootImage
 
        hPutStrLn stderr $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
-       dockerBS' <- BS.readFile dockerFile
-       let autoadd :: [BSC.ByteString]
-           autoadd
-               | Just base <- bf_autoadd bf =
-                   [ BSC.pack ("RUN mkdir -p " ++ base ++ "\n")
-                   , BSC.pack ("ADD context.tar.bz2 " ++ base ++ "\n")
-                   ]
-               | otherwise = []
-           dockerBS =
-               BSC.concat $
-               [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
-               , "MAINTAINER dockercook <thiemann@cp-med.com>\n"
-               ] ++ autoadd ++
-               [ dockerBS'
-               ]
+       let dockerBS =
+               BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
+                          , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText (bf_dockerCommands bf)
+                          ]
            dockerHash = quickHash [dockerBS]
            allFHashes = map snd targetedFiles
            buildFileHash = quickHash [BSC.pack (show bf)]
@@ -95,12 +88,16 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
            imageName = DockerImage imageTag
        info $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
        info $ "Check if the image is already built"
+       let markImage = markUsingImage stateManager imageName (Just baseImage)
        ec <- system ("docker images | grep -q " ++ T.unpack imageTag)
        if ec == ExitSuccess
        then do info "The image already exists!"
+               markImage
                return imageName
        else do info "Image not found!"
-               launchImageBuilder dockerBS imageName
+               x <- launchImageBuilder dockerBS imageName
+               markImage
+               return x
     where
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory "cook-docker-build" $ \tempDir ->
@@ -127,19 +124,20 @@ buildImage cfg@(CookConfig{..}) fileHashes bf =
           case FP.stripPrefix (FP.decodeString cc_dataDir) fp of
             Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ show cc_dataDir)
             Just x -> x
-      dockerFile = cc_dockerFileDir </> (bf_dockerFile bf)
       matchesFile fp pattern = matchesFilePattern pattern (FP.encodeString (localName fp))
-      isNeededHash fp = or (map (matchesFile fp) (bf_include bf))
+      isNeededHash fp = or (map (matchesFile fp) (V.toList (bf_include bf)))
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) fileHashes
+
 
 cookBuild :: CookConfig -> IO ()
 cookBuild cfg@(CookConfig{..}) =
-    do boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
+    do stateManager <- createStateManager cc_stateDir
+       boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable (isBoring boring)  cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
-       mapM_ (buildImage cfg fileHashes) roots
-       info "All done!"
+       mapM_ (buildImage cfg stateManager fileHashes) roots
+       logInfo "All done!"
        return ()
     where
       parseBoring =

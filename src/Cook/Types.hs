@@ -1,19 +1,21 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Cook.Types where
 
+import Data.Hashable
+import Data.SafeCopy
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
 data CookCmd
    = CookBuild CookConfig
-   | CookClean FilePath
+   | CookClean FilePath Int
    | CookList
    deriving (Show, Eq)
 
 data CookConfig
    = CookConfig
-   { cc_stateFile :: FilePath
+   { cc_stateDir :: FilePath
    , cc_dataDir :: FilePath
-   , cc_dockerFileDir :: FilePath
    , cc_buildFileDir :: FilePath
    , cc_boringFile :: Maybe FilePath
    , cc_buildEntryPoints :: [String]
@@ -25,4 +27,4 @@ newtype SHA1 =
 
 newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Hashable, SafeCopy)

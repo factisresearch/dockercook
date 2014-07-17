@@ -1,1 +1,5 @@
-DOCKER node.docker
+BASE DOCKER ubuntu:14.04
+RUN apt-get update
+RUN apt-get install -y nodejs npm
+RUN npm install -g jshint
+RUN ln -s /usr/bin/nodejs /usr/bin/node
