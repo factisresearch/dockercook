@@ -14,26 +14,26 @@ import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Resource (runResourceT)
 import Data.Conduit
+import Data.List (intersperse)
+import Data.Maybe (fromMaybe, isJust)
+import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO (hPutStr, hPutStrLn, stderr)
 import System.IO.Temp
 import System.Process
+import Text.Regex (mkRegex, matchRegex)
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Conduit.Combinators as C
-import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
-import qualified Filesystem.Path.CurrentOS as FP
-
-import Data.Maybe (fromMaybe, isJust)
-import Data.List (intersperse)
-import Text.Regex (mkRegex, matchRegex)
 import qualified Data.Traversable as T
+import qualified Data.Vector as V
+import qualified Filesystem.Path.CurrentOS as FP
 
 info :: MonadIO m => String -> m ()
 info = liftIO . hPutStrLn stderr
@@ -45,8 +45,14 @@ quickHash :: [BS.ByteString] -> SHA1
 quickHash bsList =
     SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
 
+fixTailingSlash :: FilePath -> FilePath
+fixTailingSlash s =
+    case reverse s of
+      ('/':_) -> s
+      d -> reverse ('/':d)
+
 makeDirectoryFileHashTable :: (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
-makeDirectoryFileHashTable ignore (FP.decodeString -> root) =
+makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
     do info $ "Hashing directory tree at " ++ show root ++ ". This will take some time..."
        x <- runResourceT $ C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
        hPutStr stderr "\n"
@@ -54,7 +60,9 @@ makeDirectoryFileHashTable ignore (FP.decodeString -> root) =
     where
       hashFile relToCurrentF =
           case FP.stripPrefix root relToCurrentF of
-            Nothing -> fail ("Expected " ++ show relToCurrentF ++ " to start with " ++ show root)
+            Nothing ->
+                let cd = show $ FP.commonPrefix [root, relToCurrentF]
+                in fail ("Expected " ++ show relToCurrentF ++ " to start with " ++ show root ++ ". Common dirs:" ++ cd)
             Just relToRootF -> hashFile' relToRootF relToCurrentF
       hashFile' relToRootF relToCurrentF
           | ignore relToRootF =
@@ -128,14 +136,16 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
 
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory "cook-docker-build" $ \tempDir ->
-          do let tarCmd =
-                     concat $
-                     [ "tar cjf ", tempDir </> "context.tar.bz2", " -C ", cc_dataDir, " "
-                     ] ++ intersperse " " (map (FP.encodeString . localName . fst) targetedFiles)
-             unless (null targetedFiles) $
-                    do ecTar <- system tarCmd
-                       unless (ecTar == ExitSuccess) $
-                              fail ("Error creating tar of context:\n" ++ tarCmd)
+          do mapM_ (\(f,_) ->
+                        do let dirC = tempDir </> (FP.encodeString $ localName $ FP.directory f)
+                               copySrc = FP.encodeString f
+                               targetSrc = tempDir </> (FP.encodeString $ localName f)
+                           when (dirC /= "") $
+                                 do putStrLn ("mkdir -p " ++ dirC)
+                                    createDirectoryIfMissing True dirC
+                           putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
+                           copyFile copySrc targetSrc
+                   ) targetedFiles
              info "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              info ("Building docker container...")
@@ -148,8 +158,8 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                        _ <- system $ "rm -rf COOKFAILED; cp -vr " ++ tempDir ++ " COOKFAILED"
                        exitWith ecDocker
       localName fp =
-          case FP.stripPrefix (FP.decodeString cc_dataDir) fp of
-            Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ show cc_dataDir)
+          case FP.stripPrefix (FP.decodeString $ fixTailingSlash cc_dataDir) fp of
+            Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ cc_dataDir)
             Just x -> x
       matchesFile fp pattern = matchesFilePattern pattern (FP.encodeString (localName fp))
       isNeededHash fp = or (map (matchesFile fp) (V.toList (bf_include bf)))
