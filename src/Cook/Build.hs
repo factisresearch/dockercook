@@ -14,7 +14,6 @@ import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Resource (runResourceT)
 import Data.Conduit
-import Data.List (intersperse)
 import Data.Maybe (fromMaybe, isJust)
 import System.Directory
 import System.Exit

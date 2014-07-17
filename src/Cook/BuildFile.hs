@@ -13,8 +13,6 @@ import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
 import Data.Char
 import Data.List (find)
-import Data.Maybe (isJust)
-import qualified Data.Foldable as F
 import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
