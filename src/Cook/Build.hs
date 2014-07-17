@@ -16,7 +16,7 @@ import Control.Monad.Trans.Resource (runResourceT)
 import Data.Conduit
 import System.Exit
 import System.FilePath
-import System.IO (hPutStrLn, hPutStr, stderr)
+import System.IO (hPutStr, hPutStrLn, stderr)
 import System.IO.Temp
 import System.Process
 import qualified Crypto.Hash.SHA1 as SHA1
@@ -48,7 +48,9 @@ quickHash bsList =
 makeDirectoryFileHashTable :: (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
 makeDirectoryFileHashTable ignore (FP.decodeString -> root) =
     do info $ "Hashing directory tree at " ++ show root ++ ". This will take some time..."
-       runResourceT $ C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
+       x <- runResourceT $ C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
+       hPutStr stderr "\n"
+       return x
     where
       hashFile relToCurrentF =
           case FP.stripPrefix root relToCurrentF of
@@ -72,10 +74,20 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                  do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
                     buildImage cfg stateManager fileHashes parent
              (BuildBaseDocker rootImage) ->
-                 do markUsingImage stateManager rootImage Nothing
-                    return rootImage
+                 do baseExists <- dockerImageExists rootImage
+                    if baseExists
+                    then do markUsingImage stateManager rootImage Nothing
+                            return rootImage
+                    else do logInfo $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
+                            (ec, stdOut, _) <-
+                                readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
+                            if ec == ExitSuccess
+                            then do markUsingImage stateManager rootImage Nothing
+                                    return rootImage
+                            else error ("Can't find provided base docker image "
+                                        ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
 
-       hPutStrLn stderr $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
+       logInfo $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
        let dockerBS =
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
                           , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText (bf_dockerCommands bf)
@@ -84,14 +96,12 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
            allFHashes = map snd targetedFiles
            buildFileHash = quickHash [BSC.pack (show bf)]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
-           imageTag = T.concat ["cook-", T.decodeUtf8 superHash]
-           imageName = DockerImage imageTag
-       info $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
-       info $ "Check if the image is already built"
+           imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
+       logInfo $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
        let markImage = markUsingImage stateManager imageName (Just baseImage)
-       ec <- system ("docker images | grep -q " ++ T.unpack imageTag)
-       if ec == ExitSuccess
-       then do info "The image already exists!"
+       imageExists <- dockerImageExists imageName
+       if imageExists
+       then do logInfo "The image already exists!"
                markImage
                return imageName
        else do info "Image not found!"
@@ -99,6 +109,23 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                markImage
                return x
     where
+      dockerImageExists (DockerImage imageName) =
+          do logInfo $ "Checking if the image " ++ show imageName ++ " is already present... "
+             (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
+             let imageLines = T.lines $ T.pack stdOut
+             return $ ec == ExitSuccess && checkLines imageName imageLines
+          where
+            checkLines _ [] = False
+            checkLines im (line:xs) =
+                let (imageBaseName, vers) = T.break (==':') im
+                in if T.isPrefixOf imageBaseName line
+                   then if vers == ""
+                        then True
+                        else if T.isInfixOf (T.drop 1 vers) line
+                             then True
+                             else checkLines im xs
+                   else checkLines im xs
+
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory "cook-docker-build" $ \tempDir ->
           do let tarCmd =
