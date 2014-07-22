@@ -84,9 +84,19 @@ constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
 constructBuildFile fp theLines =
     case baseLine of
       Just (BaseLine base) ->
-          Right $ foldl handleLine (BuildFile (BuildFileId (T.pack fp)) base V.empty V.empty) theLines
-      _ -> Left "Missing BASE line!"
+         baseCheck base $ foldl handleLine (BuildFile myId base V.empty V.empty) theLines
+      _ ->
+          Left "Missing BASE line!"
     where
+      baseCheck base onSuccess =
+          case base of
+            BuildBaseCook cookId ->
+                if cookId == myId
+                then Left "Recursive BASE line! You are referencing yourself."
+                else Right onSuccess
+            _ -> Right onSuccess
+      myId =
+          BuildFileId (T.pack fp)
       baseLine =
           flip find theLines $ \l ->
               case l of

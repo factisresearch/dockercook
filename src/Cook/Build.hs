@@ -53,8 +53,9 @@ fixTailingSlash s =
 makeDirectoryFileHashTable :: (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
 makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
     do info $ "Hashing directory tree at " ++ show root ++ ". This will take some time..."
-       x <- runResourceT $ C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
+       x <- runResourceT $! C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
        hPutStr stderr "\n"
+       info "Done hashing your repo!"
        return x
     where
       hashFile relToCurrentF =
@@ -116,11 +117,15 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                markImage
                return x
     where
-      dockerImageExists (DockerImage imageName) =
+      dockerImageExists localIm@(DockerImage imageName) =
           do logInfo $ "Checking if the image " ++ show imageName ++ " is already present... "
-             (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
-             let imageLines = T.lines $ T.pack stdOut
-             return $ ec == ExitSuccess && checkLines imageName imageLines
+             known <- isImageKnown stateManager localIm
+             if known
+             then do logInfo $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
+                     return True
+             else do (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
+                     let imageLines = T.lines $ T.pack stdOut
+                     return $ ec == ExitSuccess && checkLines imageName imageLines
           where
             checkLines _ [] = False
             checkLines im (line:xs) =
@@ -189,4 +194,5 @@ prepareEntryPoint buildFileDir (BuildFileId entryPoint) =
          Left errMsg ->
              error ("Failed to parse EntryPoint " ++ show n ++ ": " ++ errMsg)
          Right ep ->
-             return ep
+             do info $ "Parsed " ++ show n ++ " ..."
+                return ep

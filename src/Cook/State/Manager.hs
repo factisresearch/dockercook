@@ -6,6 +6,7 @@
 module Cook.State.Manager
     ( StateManager
     , createStateManager, markUsingImage
+    , isImageKnown
     , garbageCollectImages
     )
 where
@@ -19,6 +20,7 @@ import Control.Concurrent.STM
 import Control.Monad.Logger hiding (logInfo)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
+import Data.Maybe
 import Data.SafeCopy (safeGet, safePut)
 import Data.Serialize.Get (runGet)
 import Data.Serialize.Put (runPut)
@@ -188,6 +190,10 @@ garbageCollectImages (StateManager{..}) deletePred deleteFun =
                                 return info
                       markAs $ deletePred dbInfo
 
+isImageKnown :: StateManager -> DockerImage -> IO Bool
+isImageKnown (StateManager{..}) (DockerImage imageName) =
+    do x <- sm_runSql $ getBy (UniqueDbDockerImage imageName)
+       return (isJust x)
 
 markUsingImage :: StateManager -> DockerImage -> Maybe DockerImage -> IO ()
 markUsingImage (StateManager{..}) img@(DockerImage imageName) mParentImage =
