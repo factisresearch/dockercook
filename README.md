@@ -5,6 +5,7 @@ dockercook
 
 # Install
 
+* From Hackage: `cabal install dockercook`
 * From Source: `git clone https://github.com/factisresearch/dockercook.git && cd dockercook && cabal install`
 
 # Commands

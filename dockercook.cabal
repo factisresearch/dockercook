@@ -9,6 +9,8 @@ maintainer:          thiemann@factisresearch.com
 copyright:           (c) 2014 factis research GmbH
 category:            Development
 build-type:          Simple
+homepage:            https://github.com/factisresearch/dockercook
+bug-reports:         https://github.com/factisresearch/dockercook/issues
 cabal-version:       >=1.8
 
 library
@@ -67,3 +69,7 @@ test-suite dockercook-test
                        text >=1.1 && <1.2,
                        vector >=0.10 && <0.11
   ghc-options: -Wall -fno-warn-orphans
+
+source-repository head
+  type:     git
+  location: git://github.com/factisresearch/dockercook.git
