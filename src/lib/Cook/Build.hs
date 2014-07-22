@@ -164,16 +164,16 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) fileHashes
 
 
-cookBuild :: CookConfig -> IO ()
+cookBuild :: CookConfig -> IO [DockerImage]
 cookBuild cfg@(CookConfig{..}) =
     do stateManager <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable (isBoring boring)  cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
-       mapM_ (buildImage cfg stateManager fileHashes) roots
+       res <- mapM (buildImage cfg stateManager fileHashes) roots
        logInfo "All done!"
-       return ()
+       return res
     where
       parseBoring =
           map (mkRegex . T.unpack) . filter (not . ("#" `T.isPrefixOf`) . T.strip) .  T.lines
