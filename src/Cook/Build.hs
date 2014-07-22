@@ -34,12 +34,6 @@ import qualified Data.Traversable as T
 import qualified Data.Vector as V
 import qualified Filesystem.Path.CurrentOS as FP
 
-info :: MonadIO m => String -> m ()
-info = liftIO . hPutStrLn stderr
-
-debug :: MonadIO m => String -> m ()
-debug _ = return ()
-
 quickHash :: [BS.ByteString] -> SHA1
 quickHash bsList =
     SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
@@ -52,10 +46,10 @@ fixTailingSlash s =
 
 makeDirectoryFileHashTable :: (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
 makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
-    do info $ "Hashing directory tree at " ++ show root ++ ". This will take some time..."
+    do logInfo $ "Hashing directory tree at " ++ show root ++ ". This will take some time..."
        x <- runResourceT $! C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
        hPutStr stderr "\n"
-       info "Done hashing your repo!"
+       logInfo "Done hashing your repo!"
        return x
     where
       hashFile relToCurrentF =
@@ -66,10 +60,10 @@ makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
             Just relToRootF -> hashFile' relToRootF relToCurrentF
       hashFile' relToRootF relToCurrentF
           | ignore relToRootF =
-              do debug ("Ignored " ++ show relToRootF)
+              do logDebug ("Ignored " ++ show relToRootF)
                  return Nothing
           | otherwise =
-              do debug ("Hashed " ++ show relToRootF)
+              do logDebug ("Hashed " ++ show relToRootF)
                  bs <- C.sourceFile relToCurrentF $$ C.sinkList
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, quickHash bs)
@@ -112,7 +106,7 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
        then do logInfo "The image already exists!"
                markImage
                return imageName
-       else do info "Image not found!"
+       else do logInfo "Image not found!"
                x <- launchImageBuilder dockerBS imageName
                markImage
                return x
@@ -150,16 +144,16 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                            putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
                            copyFile copySrc targetSrc
                    ) targetedFiles
-             info "Writing Dockerfile ..."
+             logInfo "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
-             info ("Building docker container...")
+             logInfo ("Building docker container...")
              let tag = T.unpack $ unDockerImage imageName
              ecDocker <- system $ "docker build --rm -t " ++ tag ++ " " ++ tempDir
              if ecDocker == ExitSuccess
                then return imageName
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
                        hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
-                       _ <- system $ "rm -rf COOKFAILED; cp -vr " ++ tempDir ++ " COOKFAILED"
+                       _ <- system $ "rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED"
                        exitWith ecDocker
       localName fp =
           case FP.stripPrefix (FP.decodeString $ fixTailingSlash cc_dataDir) fp of
@@ -194,5 +188,5 @@ prepareEntryPoint buildFileDir (BuildFileId entryPoint) =
          Left errMsg ->
              error ("Failed to parse EntryPoint " ++ show n ++ ": " ++ errMsg)
          Right ep ->
-             do info $ "Parsed " ++ show n ++ " ..."
+             do logInfo $ "Parsed " ++ show n ++ " ..."
                 return ep
