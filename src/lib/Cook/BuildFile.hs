@@ -71,14 +71,14 @@ matchesFilePattern (FilePattern (x : xs)) fp =
           else False
       PatternWildCard ->
           case xs of
-            (PatternText nextToken : _) -> -- *foo
+            (PatternText nextToken : _) ->
                 case T.breakOn (T.pack nextToken) (T.pack fp) of
                   (_, "") -> False
                   (_, rest) ->
                       matchesFilePattern (FilePattern xs) (T.unpack rest)
-            (PatternWildCard : _) -> -- ** -> *
+            (PatternWildCard : _) ->
                 matchesFilePattern (FilePattern xs) fp
-            [] -> True -- *
+            [] -> True
 
 constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
 constructBuildFile fp theLines =

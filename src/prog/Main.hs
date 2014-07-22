@@ -1,6 +1,5 @@
 module Main where
 
-import Cook.Types
 import Cook.ArgParse
 import Cook.Build
 import Cook.Clean

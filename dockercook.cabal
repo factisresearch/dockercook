@@ -11,9 +11,10 @@ category:            Development
 build-type:          Simple
 cabal-version:       >=1.8
 
-executable dockercook
-  main-is:             Main.hs
-  -- other-modules:       
+library
+  hs-source-dirs:      src/lib
+  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types
+  other-modules:       Cook.Util, Cook.State.Manager, Cook.State.Model
   build-depends:       base ==4.6.*,
                        attoparsec >=0.11 && <0.12,
                        base16-bytestring >=0.1 && <0.2,
@@ -26,7 +27,6 @@ executable dockercook
                        conduit-extra >=1.1 && <1.2,
                        resourcet >=1.1 && <1.2,
                        regex-compat >=0.95 && <0.96,
-                       optparse-applicative >=0.8 && <0.9,
                        process >=1.1 && <1.2,
                        system-filepath >=0.4 && <0.5,
                        temporary >=1.2 && <1.3,
@@ -45,42 +45,25 @@ executable dockercook
                        hashable >=1.2 && <1.3,
                        vector >=0.10 && <0.11,
                        unordered-containers >=0.2 && <0.3
-  hs-source-dirs:      src
+  ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
+
+executable dockercook
+  main-is:             Main.hs
+  other-modules:       Cook.ArgParse
+  build-depends:       base ==4.6.*,
+                       dockercook,
+                       optparse-applicative >=0.8 && <0.9
+  hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 
 test-suite dockercook-test
   type:                exitcode-stdio-1.0
-  hs-source-dirs:      src
+  hs-source-dirs:      src/test
   main-is:             Tests.hs
-  -- other-modules:       Tests.Routing
-  build-depends:       HTF >=0.11 && <0.13,
-                       base ==4.6.*,
-                       attoparsec >=0.11 && <0.12,
-                       base16-bytestring >=0.1 && <0.2,
-                       bytestring >=0.10 && <0.11,
-                       conduit,
-                       conduit-combinators,
-                       conduit-extra,
-                       resourcet,
-                       cryptohash >=0.11 && <0.12,
-                       directory >=1.2 && <1.3,
-                       filepath >=1.3 && <1.4,
-                       optparse-applicative >=0.8 && <0.9,
-                       process >=1.1 && <1.2,
-                       system-filepath >=0.4 && <0.5,
-                       temporary >=1.2 && <1.3,
+  other-modules:       Tests.BuildFile
+  build-depends:       base ==4.6.*,
+                       dockercook,
+                       HTF >=0.11 && <0.13,
                        text >=1.1 && <1.2,
-                       graph-core >= 0.2 && <0.3,
-                       persistent-sqlite >= 1.3 && <1.4,
-                       persistent-template >=1.3 && <1.4,
-                       resourcet >= 0.4 && <1.2,
-                       mtl >=2.1 && <2.2,
-                       monad-logger >=0.3 && <0.4,
-                       cereal >=0.4 && <0.5,
-                       safecopy >=0.8 && <0.9,
-                       time >=1.4 && <1.5,
-                       stm >=2.4 && <2.5,
-                       hashable >=1.2 && <1.3,
-                       vector >=0.10 && <0.11,
-                       unordered-containers >=0.2 && <0.3
+                       vector >=0.10 && <0.11
   ghc-options: -Wall -fno-warn-orphans

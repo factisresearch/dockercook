@@ -6,12 +6,6 @@ import Data.SafeCopy
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
-data CookCmd
-   = CookBuild CookConfig
-   | CookClean FilePath Int
-   | CookList
-   deriving (Show, Eq)
-
 data CookConfig
    = CookConfig
    { cc_stateDir :: FilePath

@@ -1,3 +1,10 @@
+# project
+scratch/
+COOKFAILED/
+.HTF/
+example/state
+
+# haskell
 dist
 cabal-dev
 *.o
@@ -9,3 +16,25 @@ cabal-dev
 .cabal-sandbox/
 cabal.sandbox.config
 cabal.config
+
+# mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon must end with two \r
+Icon
+
+
+# Thumbnails
+._*
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes
+
+# Directories potentially created on remote AFP share
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items

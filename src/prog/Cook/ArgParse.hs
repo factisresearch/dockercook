@@ -1,7 +1,13 @@
-module Cook.ArgParse (argParse) where
+module Cook.ArgParse (argParse, CookCmd(..)) where
 
 import Cook.Types
 import Options.Applicative
+
+data CookCmd
+   = CookBuild CookConfig
+   | CookClean FilePath Int
+   | CookList
+   deriving (Show, Eq)
 
 cookKeepDaysP =
     option ( long "keep" <> short 'k' <> metavar "DAYS" <> help "Days of docker images to keep")
