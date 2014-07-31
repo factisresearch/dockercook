@@ -99,6 +99,10 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
            buildFileHash = quickHash [BSC.pack (show bf)]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
+       logInfo $ "Include files: " ++ (show $ length targetedFiles)
+                   ++ " FileHashCount: " ++ (show $ length allFHashes)
+                   ++ " Docker: " ++ (show $ B16.encode $ unSha1 dockerHash)
+                   ++ " BuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
        logInfo' $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
        let markImage = markUsingImage stateManager imageName (Just baseImage)
        imageExists <- dockerImageExists imageName
