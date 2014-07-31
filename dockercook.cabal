@@ -18,7 +18,7 @@ library
   exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types
   other-modules:       Cook.Util, Cook.State.Manager, Cook.State.Model
   build-depends:       base ==4.6.*,
-                       attoparsec >=0.11 && <0.12,
+                       attoparsec >=0.11 && <0.13,
                        base16-bytestring >=0.1 && <0.2,
                        bytestring >=0.10 && <0.11,
                        conduit >=1.1 && <1.2,
