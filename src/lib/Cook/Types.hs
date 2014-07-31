@@ -15,6 +15,9 @@ data CookConfig
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 
+newtype StreamHook =
+    StreamHook { unStreamHook :: BS.ByteString -> IO () }
+
 newtype SHA1 =
     SHA1 { unSha1 :: BS.ByteString }
          deriving (Show, Eq)

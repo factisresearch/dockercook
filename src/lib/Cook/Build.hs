@@ -18,7 +18,7 @@ import Data.Maybe (fromMaybe, isJust)
 import System.Directory
 import System.Exit
 import System.FilePath
-import System.IO (hPutStr, hPutStrLn, stderr)
+import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
@@ -68,19 +68,19 @@ makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, quickHash bs)
 
-buildImage :: CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
-buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
+buildImage :: Maybe StreamHook -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
+buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
     do baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
-                    buildImage cfg stateManager fileHashes parent
+                    buildImage mStreamHook cfg stateManager fileHashes parent
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
                     then do markUsingImage stateManager rootImage Nothing
                             return rootImage
-                    else do logInfo $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
+                    else do logInfo' $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
                             (ec, stdOut, _) <-
                                 readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
@@ -99,23 +99,34 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
            buildFileHash = quickHash [BSC.pack (show bf)]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
-       logInfo $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
+       logInfo' $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
        let markImage = markUsingImage stateManager imageName (Just baseImage)
        imageExists <- dockerImageExists imageName
        if imageExists
-       then do logInfo "The image already exists!"
+       then do logInfo' "The image already exists!"
                markImage
                return imageName
-       else do logInfo "Image not found!"
+       else do logInfo' "Image not found!"
                x <- launchImageBuilder dockerBS imageName
                markImage
                return x
     where
+      logInfo' m =
+          do logInfo m
+             case mStreamHook of
+               Nothing -> return ()
+               Just (StreamHook hook) -> hook (BSC.pack m)
+      streamHook bs =
+          do hPutStr stderr (BSC.unpack bs)
+             hFlush stderr
+             case mStreamHook of
+               Nothing -> return ()
+               Just (StreamHook hook) -> hook bs
       dockerImageExists localIm@(DockerImage imageName) =
-          do logInfo $ "Checking if the image " ++ show imageName ++ " is already present... "
+          do logInfo' $ "Checking if the image " ++ show imageName ++ " is already present... "
              known <- isImageKnown stateManager localIm
              if known
-             then do logInfo $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
+             then do logInfo' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      return True
              else do (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
                      let imageLines = T.lines $ T.pack stdOut
@@ -144,16 +155,16 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
                            putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
                            copyFile copySrc targetSrc
                    ) targetedFiles
-             logInfo "Writing Dockerfile ..."
+             logInfo' "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
-             logInfo ("Building docker container...")
+             logInfo' ("Building docker container...")
              let tag = T.unpack $ unDockerImage imageName
-             ecDocker <- system $ "docker build --rm -t " ++ tag ++ " " ++ tempDir
+             ecDocker <- systemStream ("docker build --rm -t " ++ tag ++ " " ++ tempDir) streamHook
              if ecDocker == ExitSuccess
                then return imageName
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
                        hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
-                       _ <- system $ "rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED"
+                       _ <- systemStream ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
                        exitWith ecDocker
       localName fp =
           case FP.stripPrefix (FP.decodeString $ fixTailingSlash cc_dataDir) fp of
@@ -164,14 +175,14 @@ buildImage cfg@(CookConfig{..}) stateManager fileHashes bf =
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) fileHashes
 
 
-cookBuild :: CookConfig -> IO [DockerImage]
-cookBuild cfg@(CookConfig{..}) =
+cookBuild :: CookConfig -> Maybe StreamHook -> IO [DockerImage]
+cookBuild cfg@(CookConfig{..}) mStreamHook =
     do stateManager <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable (isBoring boring)  cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
-       res <- mapM (buildImage cfg stateManager fileHashes) roots
+       res <- mapM (buildImage mStreamHook cfg stateManager fileHashes) roots
        logInfo "All done!"
        return res
     where

@@ -1,5 +1,5 @@
 name:                dockercook
-version:             0.1.1.0
+version:             0.1.2.0
 synopsis:            A build tool for multiple docker image layers
 description:         Build and manage multiple docker image layers to speed up deployment
 license:             MIT

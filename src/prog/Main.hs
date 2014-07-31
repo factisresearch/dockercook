@@ -9,7 +9,7 @@ runProg :: CookCmd -> IO ()
 runProg cmd =
     case cmd of
       CookBuild buildCfg ->
-          do _ <- cookBuild buildCfg
+          do _ <- cookBuild buildCfg Nothing
              return ()
       CookClean stateDir daysToKeep ->
           cookClean stateDir daysToKeep
