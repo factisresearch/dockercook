@@ -115,7 +115,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
           do logInfo m
              case mStreamHook of
                Nothing -> return ()
-               Just (StreamHook hook) -> hook (BSC.pack m)
+               Just (StreamHook hook) -> hook (BSC.pack (m ++ "\n"))
       streamHook bs =
           do hPutStr stderr (BSC.unpack bs)
              hFlush stderr
