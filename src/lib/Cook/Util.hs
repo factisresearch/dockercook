@@ -7,6 +7,7 @@ import System.Exit
 import System.IO (hPutStrLn, stderr)
 
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BSC
 
 logInfo :: MonadIO m => String -> m ()
 logInfo = liftIO . hPutStrLn stderr
@@ -16,7 +17,9 @@ logDebug _ = return ()
 
 systemStream :: String -> (BS.ByteString -> IO ()) -> IO ExitCode
 systemStream cmd onOutput =
-    do (ec, _) <- sourceCmdWithConsumer cmd conduitRead
+    do onOutput (BSC.pack $ "$> " ++ cmd ++ "\n")
+       (ec, _) <- sourceCmdWithConsumer cmd conduitRead
+       onOutput (BSC.pack $ "ExitCode: " ++ show ec ++ "\n")
        return ec
     where
       conduitRead =
