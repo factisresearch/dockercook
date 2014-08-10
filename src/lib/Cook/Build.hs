@@ -148,7 +148,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                    else checkLines im xs
 
       launchImageBuilder dockerBS imageName =
-          withSystemTempDirectory "cook-docker-build" $ \tempDir ->
+          withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
           do mapM_ (\(f,_) ->
                         do let dirC = tempDir </> (FP.encodeString $ localName $ FP.directory f)
                                copySrc = FP.encodeString f
@@ -161,14 +161,17 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                    ) targetedFiles
              logInfo' "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
+             forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->
+                 do ec <- systemStream (Just tempDir) cmd streamHook
+                    unless (ec == ExitSuccess) (fail $ "Preparation command failed: " ++ cmd)
              logInfo' ("Building docker container...")
              let tag = T.unpack $ unDockerImage imageName
-             ecDocker <- systemStream ("docker build --rm -t " ++ tag ++ " " ++ tempDir) streamHook
+             ecDocker <- systemStream Nothing ("docker build --rm -t " ++ tag ++ " " ++ tempDir) streamHook
              if ecDocker == ExitSuccess
                then return imageName
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
                        hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
-                       _ <- systemStream ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
+                       _ <- systemStream Nothing ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
                        exitWith ecDocker
       localName fp =
           case FP.stripPrefix (FP.decodeString $ fixTailingSlash cc_dataDir) fp of

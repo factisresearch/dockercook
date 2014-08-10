@@ -1,9 +1,8 @@
 module Cook.Util where
 
-import Data.Conduit
-import Data.Conduit.Process
 import Control.Monad.Trans
 import System.Exit
+import System.Process (system)
 import System.IO (hPutStrLn, stderr)
 
 import qualified Data.ByteString as BS
@@ -15,18 +14,11 @@ logInfo = liftIO . hPutStrLn stderr
 logDebug :: MonadIO m => String -> m ()
 logDebug _ = return ()
 
-systemStream :: String -> (BS.ByteString -> IO ()) -> IO ExitCode
-systemStream cmd onOutput =
-    do onOutput (BSC.pack $ "$> " ++ cmd ++ "\n")
-       (ec, _) <- sourceCmdWithConsumer cmd conduitRead
-       onOutput (BSC.pack $ "ExitCode: " ++ show ec ++ "\n")
-       return ec
-    where
-      conduitRead =
-          do mBS <- await
-             case mBS of
-               Just bs ->
-                   do liftIO $ onOutput bs
-                      conduitRead
-               Nothing ->
-                   return ()
+systemStream :: Maybe FilePath -> String -> (BS.ByteString -> IO ()) -> IO ExitCode
+systemStream mDir cmd _onOutput =
+    let realCmd =
+            case mDir of
+              Just dir -> "(cd " ++ dir ++ "; " ++ cmd ++ ")"
+              Nothing -> cmd
+    in do logInfo ("$ " ++ realCmd)
+          system realCmd
