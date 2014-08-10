@@ -2,6 +2,9 @@ module Cook.ArgParse (argParse, CookCmd(..)) where
 
 import Cook.Types
 import Options.Applicative
+import System.FilePath ((</>))
+import System.Environment (getEnv)
+import System.IO.Unsafe (unsafePerformIO)
 
 data CookCmd
    = CookBuild CookConfig
@@ -9,11 +12,28 @@ data CookCmd
    | CookList
    deriving (Show, Eq)
 
+home :: FilePath
+home =
+    unsafePerformIO $ getEnv "HOME"
+
 cookKeepDaysP =
     option ( long "keep" <> short 'k' <> metavar "DAYS" <> help "Days of docker images to keep")
 
 cookStateP =
-    strOption ( long "state" <> short 's' <> metavar "DIRECTORY" <> help "Directory where dockercook stores its meta info")
+    strOption $
+    long "state" <>
+    short 's' <>
+    metavar "DIRECTORY" <>
+    value (home </> ".dockercook") <>
+    help "Directory where dockercook stores its meta info"
+
+cookTagP =
+    optional $
+    strOption $
+    long "tag" <>
+    short 't' <>
+    metavar "TAG-PREFIX" <>
+    help "Additionally tag docker images with this prefix"
 
 cookDataP =
     strOption ( long "data" <> short 'd' <> metavar "DIRECTORY" <> help "Directory where to find source files")
@@ -23,6 +43,14 @@ cookBuildP =
 
 cookEntryPointP =
     some $ strOption ( long "entrypoint" <> short 'p' <> metavar "ENTRYPOINT" <> help "dockercook targets")
+
+cookFileDropP :: Parser Int
+cookFileDropP =
+    option $
+    long "cookfile-drop-chars" <>
+    value 0 <>
+    metavar "COUNT" <>
+    help "drop this number of characters from each cook filename for tagging"
 
 cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
@@ -35,6 +63,8 @@ cookOptions =
                 <*> cookDataP
                 <*> cookBuildP
                 <*> cookBoringP
+                <*> cookTagP
+                <*> cookFileDropP
                 <*> cookEntryPointP)
 
 cookClean :: Parser CookCmd

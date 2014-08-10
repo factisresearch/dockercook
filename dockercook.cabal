@@ -54,6 +54,7 @@ executable dockercook
   other-modules:       Cook.ArgParse
   build-depends:       base ==4.6.*,
                        dockercook,
+                       filepath >= 1.3 && <1.4,
                        optparse-applicative >=0.8 && <0.9
   hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures

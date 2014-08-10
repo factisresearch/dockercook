@@ -27,6 +27,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Conduit.Combinators as C
+import qualified Data.Foldable as F
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
@@ -70,7 +71,8 @@ makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
 
 buildImage :: Maybe StreamHook -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
 buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
-    do baseImage <-
+    do logInfo $ "Inspecting " ++ name ++ "..."
+       baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
@@ -89,7 +91,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
 
-       logInfo $ "Computing hashes for " ++ (T.unpack $ unBuildFileId $ bf_name bf)
+       logInfo $ "Computing hashes for " ++ name
        let dockerBS =
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
                           , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText (bf_dockerCommands bf)
@@ -99,12 +101,18 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
            buildFileHash = quickHash [BSC.pack (show bf)]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
+           imageTag = T.unpack $ unDockerImage imageName
        logInfo $ "Include files: " ++ (show $ length targetedFiles)
                    ++ " FileHashCount: " ++ (show $ length allFHashes)
                    ++ " Docker: " ++ (show $ B16.encode $ unSha1 dockerHash)
                    ++ " BuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
-       logInfo' $ "Image name will be " ++ (T.unpack $ unDockerImage imageName)
-       let markImage = markUsingImage stateManager imageName (Just baseImage)
+       logInfo' $ "Image name will be " ++ imageTag
+       let markImage =
+               do markUsingImage stateManager imageName (Just baseImage)
+                  F.forM_ cc_tagprefix $ \prefix ->
+                      do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ prefix ++ drop cc_cookFileDropCount name) streamHook
+                         return ()
+
        imageExists <- dockerImageExists imageName
        if imageExists
        then do logInfo' "The image already exists!"
@@ -115,6 +123,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                markImage
                return x
     where
+      name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
       logInfo' m =
           do logInfo m
              case mStreamHook of
@@ -149,22 +158,21 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
 
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
-          do mapM_ (\(f,_) ->
-                        do let dirC = tempDir </> (FP.encodeString $ localName $ FP.directory f)
-                               copySrc = FP.encodeString f
-                               targetSrc = tempDir </> (FP.encodeString $ localName f)
-                           when (dirC /= "") $
-                                 do putStrLn ("mkdir -p " ++ dirC)
-                                    createDirectoryIfMissing True dirC
-                           putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
-                           copyFile copySrc targetSrc
-                   ) targetedFiles
+          do forM_ targetedFiles $ \(f,_) ->
+                 do let dirC = tempDir </> (FP.encodeString $ localName $ FP.directory f)
+                        copySrc = FP.encodeString f
+                        targetSrc = tempDir </> (FP.encodeString $ localName f)
+                    when (dirC /= "") $
+                         do putStrLn ("mkdir -p " ++ dirC)
+                            createDirectoryIfMissing True dirC
+                    putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
+                    copyFile copySrc targetSrc
              logInfo' "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->
                  do ec <- systemStream (Just tempDir) cmd streamHook
                     unless (ec == ExitSuccess) (fail $ "Preparation command failed: " ++ cmd)
-             logInfo' ("Building docker container...")
+             logInfo' ("Building " ++ name ++ "...")
              let tag = T.unpack $ unDockerImage imageName
              ecDocker <- systemStream Nothing ("docker build --rm -t " ++ tag ++ " " ++ tempDir) streamHook
              if ecDocker == ExitSuccess

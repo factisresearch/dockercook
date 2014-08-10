@@ -12,6 +12,8 @@ data CookConfig
    , cc_dataDir :: FilePath
    , cc_buildFileDir :: FilePath
    , cc_boringFile :: Maybe FilePath
+   , cc_tagprefix :: Maybe String          -- additionally tag images using this prefix + cook filename
+   , cc_cookFileDropCount :: Int           -- drop this many chars from every cook filename
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 
