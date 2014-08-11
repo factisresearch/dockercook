@@ -11,8 +11,8 @@ runProg cmd =
       CookBuild buildCfg ->
           do _ <- cookBuild buildCfg Nothing
              return ()
-      CookClean stateDir daysToKeep ->
-          cookClean stateDir daysToKeep
+      CookClean stateDir daysToKeep dryRun ->
+          cookClean stateDir daysToKeep dryRun
       CookList ->
           do putStrLn "Available commands:"
              putStrLn "- cook"

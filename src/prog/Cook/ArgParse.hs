@@ -8,7 +8,7 @@ import System.IO.Unsafe (unsafePerformIO)
 
 data CookCmd
    = CookBuild CookConfig
-   | CookClean FilePath Int
+   | CookClean FilePath Int Bool
    | CookList
    deriving (Show, Eq)
 
@@ -56,6 +56,11 @@ cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
                            <> help "File with regex list of ignored files." )
 
+dryRunP =
+    switch
+    ( long "dry-run"
+      <> help "Don't really delete anything" )
+
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
@@ -69,7 +74,7 @@ cookOptions =
 
 cookClean :: Parser CookCmd
 cookClean =
-    CookClean <$> cookStateP <*> cookKeepDaysP
+    CookClean <$> cookStateP <*> cookKeepDaysP <*> dryRunP
 
 cookHelp :: Parser CookCmd
 cookHelp =

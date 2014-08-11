@@ -8,6 +8,7 @@ module Cook.State.Manager
     , createStateManager, markUsingImage
     , isImageKnown
     , garbageCollectImages
+    , mkTempStateManager
     )
 where
 
@@ -17,6 +18,7 @@ import Cook.Types
 
 import Control.Applicative
 import Control.Concurrent.STM
+import Control.Monad
 import Control.Monad.Logger hiding (logInfo)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
@@ -28,6 +30,8 @@ import Data.Time.Clock
 import Database.Persist.Sqlite
 import System.Directory
 import System.FilePath
+import System.IO.Temp
+import System.IO
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Graph as G
@@ -40,10 +44,30 @@ import qualified Data.Vector.Unboxed as VU
 data StateManager
    = StateManager
    { sm_runSql :: forall a. SqlPersistM a -> IO a
+   , sm_databaseFile :: FilePath
    , sm_graph :: TVar G.Graph
    , sm_nodeManager :: TVar (NM.NodeManager DockerImage)
    , sm_persistGraph :: IO ()
    }
+
+mkTempStateManager :: StateManager -> IO StateManager
+mkTempStateManager (StateManager{..}) =
+    do tmpDir <- getTemporaryDirectory
+       (tmpDb, hdl) <- openTempFile tmpDir "dockercookXXX.db"
+       hClose hdl
+       copyFile sm_databaseFile tmpDb
+       pool <- createSqlitePool (T.pack sm_databaseFile) 5
+       (g, nm) <-
+           atomically $ (,) <$> readTVar sm_graph <*> readTVar sm_nodeManager
+       g' <- newTVarIO g
+       nm' <- newTVarIO nm
+       return $ StateManager
+                  { sm_runSql = runResourceT . runNoLoggingT . ((flip runSqlPool) pool)
+                  , sm_databaseFile = tmpDb
+                  , sm_graph = g'
+                  , sm_nodeManager = nm'
+                  , sm_persistGraph = return ()
+                  }
 
 createStateManager :: FilePath -> IO StateManager
 createStateManager stateDirectory =
@@ -65,6 +89,7 @@ createStateManager stateDirectory =
                  (,) <$> newTVarIO G.empty <*> newTVarIO NM.emptyNodeManager
        return $ StateManager
                 { sm_runSql = runSql
+                , sm_databaseFile = stateDirectory </> "database.db"
                 , sm_graph = g
                 , sm_nodeManager = nm
                 , sm_persistGraph = persistGraph g nm
