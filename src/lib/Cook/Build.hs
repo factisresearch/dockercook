@@ -20,6 +20,7 @@ import System.Exit
 import System.FilePath
 import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
+import System.Directory
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
 import qualified Crypto.Hash.SHA1 as SHA1
@@ -45,29 +46,37 @@ fixTailingSlash s =
       ('/':_) -> s
       d -> reverse ('/':d)
 
-makeDirectoryFileHashTable :: (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
-makeDirectoryFileHashTable ignore (FP.decodeString . fixTailingSlash -> root) =
-    do logInfo $ "Hashing directory tree at " ++ show root ++ ". This will take some time..."
-       x <- runResourceT $! C.sourceDirectoryDeep False root =$= C.concatMapM hashFile $$ C.sinkList
+makeDirectoryFileHashTable :: StateManager -> (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
+makeDirectoryFileHashTable st ignore (FP.decodeString . fixTailingSlash -> root) =
+    do currentDir <- getCurrentDirectory
+       let fullRoot = currentDir </> FP.encodeString root
+       logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This will take some time..."
+       x <- runResourceT $! C.sourceDirectoryDeep False root =$= C.concatMapM (hashFile fullRoot) $$ C.sinkList
        hPutStr stderr "\n"
        logInfo "Done hashing your repo!"
        return x
     where
-      hashFile relToCurrentF =
+      hashFile fullRoot relToCurrentF =
           case FP.stripPrefix root relToCurrentF of
             Nothing ->
                 let cd = show $ FP.commonPrefix [root, relToCurrentF]
                 in fail ("Expected " ++ show relToCurrentF ++ " to start with " ++ show root ++ ". Common dirs:" ++ cd)
-            Just relToRootF -> hashFile' relToRootF relToCurrentF
-      hashFile' relToRootF relToCurrentF
+            Just relToRootF ->
+                hashFile' fullRoot relToRootF relToCurrentF
+      hashFile' fullRoot relToRootF relToCurrentF
           | ignore relToRootF =
               do logDebug ("Ignored " ++ show relToRootF)
                  return Nothing
           | otherwise =
               do logDebug ("Hashed " ++ show relToRootF)
-                 bs <- C.sourceFile relToCurrentF $$ C.sinkList
+                 let fullFilePath = fullRoot </> FP.encodeString relToRootF
+                     hashComp =
+                         do bs <- C.sourceFile relToCurrentF $$ C.sinkList
+                            liftIO $ hPutStr stderr "#"
+                            return $! quickHash bs
+                 hash <- fastFileHash st fullFilePath hashComp
                  liftIO $ hPutStr stderr "."
-                 return $ Just (relToCurrentF, quickHash bs)
+                 return $ Just (relToCurrentF, hash)
 
 buildImage :: Maybe StreamHook -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
 buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
@@ -214,7 +223,7 @@ cookBuild :: CookConfig -> Maybe StreamHook -> IO [DockerImage]
 cookBuild cfg@(CookConfig{..}) mStreamHook =
     do stateManager <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
-       fileHashes <- makeDirectoryFileHashTable (isBoring boring)  cc_dataDir
+       fileHashes <- makeDirectoryFileHashTable stateManager (isBoring boring)  cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
        res <- mapM (buildImage mStreamHook cfg stateManager fileHashes) roots

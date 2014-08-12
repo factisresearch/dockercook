@@ -6,7 +6,7 @@
 module Cook.State.Manager
     ( StateManager
     , createStateManager, markUsingImage
-    , isImageKnown
+    , isImageKnown, fastFileHash
     , garbageCollectImages
     , mkTempStateManager
     )
@@ -31,6 +31,8 @@ import Database.Persist.Sqlite
 import System.Directory
 import System.FilePath
 import System.IO.Temp
+import System.Posix.Files
+import Data.Time.Clock.POSIX
 import System.IO
 import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HM
@@ -101,6 +103,22 @@ createStateManager stateDirectory =
           do nm <- atomically $ readTVar nmVar
              g <- atomically $ readTVar gVar
              BS.writeFile graphFile $ runPut (safePut $ GP.persistGraph nm g)
+
+fastFileHash :: MonadIO m => StateManager -> FilePath -> m SHA1 -> m SHA1
+fastFileHash (StateManager{..}) fullFilePath computeHash =
+    do stat <- liftIO $ getFileStatus fullFilePath
+       let modTime = (\t -> posixSecondsToUTCTime (realToFrac t :: POSIXTime)) $ modificationTime stat
+       mEntry <- liftIO $ sm_runSql $ getBy (UniqueHashCacheEntry fullFilePath modTime)
+       case mEntry of
+         Just entry ->
+             return $ SHA1 $ dbHashCacheHash $ entityVal entry
+         Nothing ->
+             do h <- computeHash
+                _ <-
+                    liftIO $ sm_runSql $
+                      do deleteWhere [DbHashCacheFullPath ==. fullFilePath]
+                         insert (DbHashCache fullFilePath modTime (unSha1 h))
+                return h
 
 data GCState
    = GCState
