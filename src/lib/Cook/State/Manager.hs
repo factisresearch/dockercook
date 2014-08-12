@@ -56,7 +56,7 @@ mkTempStateManager (StateManager{..}) =
        (tmpDb, hdl) <- openTempFile tmpDir "dockercookXXX.db"
        hClose hdl
        copyFile sm_databaseFile tmpDb
-       pool <- createSqlitePool (T.pack sm_databaseFile) 5
+       pool <- createSqlitePool (T.pack tmpDb) 5
        (g, nm) <-
            atomically $ (,) <$> readTVar sm_graph <*> readTVar sm_nodeManager
        g' <- newTVarIO g

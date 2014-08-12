@@ -7,7 +7,6 @@ import Cook.State.Model
 import Cook.Types
 import Cook.Util
 
-import Control.Monad
 import Data.Time.Clock
 import System.Exit
 import System.Process
@@ -15,11 +14,11 @@ import qualified Data.Text as T
 
 cookClean :: FilePath -> Int -> Bool -> IO ()
 cookClean stateDir daysToKeep dryRun =
-    do when dryRun $ logInfo "Dry run cook clean..."
-       stateManager' <- createStateManager stateDir
+    do stateManager' <- createStateManager stateDir
        stateManager <-
            if dryRun
-           then mkTempStateManager stateManager'
+           then do logInfo "Dry run cook clean..."
+                   mkTempStateManager stateManager'
            else return stateManager'
        now <- getCurrentTime
        let cleanUpPred imageMeta =

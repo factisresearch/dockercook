@@ -6,7 +6,6 @@ import System.Process (system)
 import System.IO (hPutStrLn, stderr)
 
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as BSC
 
 logInfo :: MonadIO m => String -> m ()
 logInfo = liftIO . hPutStrLn stderr
