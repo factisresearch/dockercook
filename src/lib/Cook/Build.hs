@@ -14,8 +14,8 @@ import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Resource (runResourceT)
 import Data.Conduit
+import Data.List (intersperse)
 import Data.Maybe (fromMaybe, isJust)
-import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
@@ -92,8 +92,18 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
 
        logInfo $ "Computing hashes for " ++ name
-       let dockerBS =
+       let contextAdd =
+               case bf_unpackTarget bf of
+                 Nothing -> ""
+                 Just target ->
+                     BSC.concat
+                     [ "ADD context.tar.gz /context.tar.gz\n"
+                     , "RUN cd ", BSC.pack target, " && tar -xvkf /context.tar.gz\n"
+                     , "RUN rm -rf /context.tar.gz\n"
+                     ]
+           dockerBS =
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
+                          , contextAdd
                           , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText (bf_dockerCommands bf)
                           ]
            dockerHash = quickHash [dockerBS]
@@ -156,17 +166,25 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                              else checkLines im xs
                    else checkLines im xs
 
+      compressContext tempDir =
+          do let contextPkg = tempDir </> "context.tar.gz"
+                 tarCmd =
+                     concat $
+                     [ "tar cjf ", contextPkg, " -C ", cc_dataDir
+                     ] ++ intersperse " " (map (FP.encodeString . localName . fst) targetedFiles)
+             unless (null targetedFiles) $
+                    do ecTar <- system tarCmd
+                       unless (ecTar == ExitSuccess) $
+                              fail ("Error creating tar of context:\n" ++ tarCmd)
+
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
-          do forM_ targetedFiles $ \(f,_) ->
-                 do let dirC = tempDir </> (FP.encodeString $ localName $ FP.directory f)
-                        copySrc = FP.encodeString f
-                        targetSrc = tempDir </> (FP.encodeString $ localName f)
-                    when (dirC /= "") $
-                         do putStrLn ("mkdir -p " ++ dirC)
-                            createDirectoryIfMissing True dirC
-                    putStrLn ("cp " ++ copySrc ++ " " ++ targetSrc)
-                    copyFile copySrc targetSrc
+          do case bf_unpackTarget bf of
+               Nothing ->
+                   logInfo' "No UNPACK directive. Won't copy any context!"
+               Just _ ->
+                   do logInfo' "Compressing context..."
+                      compressContext tempDir
              logInfo' "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->

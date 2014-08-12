@@ -25,6 +25,7 @@ data BuildFile
    = BuildFile
    { bf_name :: BuildFileId
    , bf_base :: BuildBase
+   , bf_unpackTarget :: Maybe FilePath
    , bf_dockerCommands :: V.Vector DockerCommand
    , bf_include :: V.Vector FilePattern
    , bf_prepare :: V.Vector T.Text
@@ -39,6 +40,7 @@ data BuildFileLine
    = IncludeLine FilePattern    -- copy files from data directory to temporary cook directory
    | BaseLine BuildBase         -- use either cook file or docker image as base
    | PrepareLine T.Text         -- run shell command in temporary cook directory
+   | UnpackLine FilePath        -- where should the context be unpacked to?
    | DockerLine DockerCommand   -- regular docker command
    deriving (Show, Eq)
 
@@ -86,7 +88,7 @@ constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
 constructBuildFile fp theLines =
     case baseLine of
       Just (BaseLine base) ->
-         baseCheck base $ foldl handleLine (BuildFile myId base V.empty V.empty V.empty) theLines
+         baseCheck base $ foldl handleLine (BuildFile myId base Nothing V.empty V.empty V.empty) theLines
       _ ->
           Left "Missing BASE line!"
     where
@@ -112,6 +114,8 @@ constructBuildFile fp theLines =
                 buildFile { bf_include = V.snoc (bf_include buildFile) pattern }
             PrepareLine cmd ->
                 buildFile { bf_prepare = V.snoc (bf_prepare buildFile) cmd }
+            UnpackLine unpackTarget ->
+                buildFile { bf_unpackTarget = Just unpackTarget }
             _ -> buildFile
 
 parseBuildFile :: FilePath -> IO (Either String BuildFile)
@@ -146,7 +150,12 @@ pBuildFile =
           IncludeLine <$> (pIncludeLine <* finish) <|>
           BaseLine <$> (pBuildBase <* finish) <|>
           PrepareLine <$> (pPrepareLine <* finish) <|>
+          UnpackLine <$> (pUnpackLine <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
+
+pUnpackLine :: Parser FilePath
+pUnpackLine =
+    T.unpack <$> ((asciiCI "UNPACK" *> skipSpace) *> takeWhile1 isValidFileNameChar)
 
 pBuildBase :: Parser BuildBase
 pBuildBase =
