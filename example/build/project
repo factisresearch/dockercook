@@ -1,6 +1,5 @@
 BASE COOK node
 INCLUDE *.js
 INCLUDE static/*
-RUN mkdir /src
-ADD hello.js /src/hello.js
+UNPACK /src
 RUN jshint /src/hello.js

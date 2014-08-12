@@ -97,8 +97,9 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                  Nothing -> ""
                  Just target ->
                      BSC.concat
-                     [ "ADD context.tar.gz /context.tar.gz\n"
-                     , "RUN cd ", BSC.pack target, " && tar -xvkf /context.tar.gz\n"
+                     [ "COPY context.tar.gz /context.tar.gz\n"
+                     , "RUN mkdir -p ", BSC.pack target, "\n"
+                     , "RUN tar xvkf /context.tar.gz -C ", BSC.pack target, "\n"
                      , "RUN rm -rf /context.tar.gz\n"
                      ]
            dockerBS =
@@ -171,6 +172,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                  tarCmd =
                      concat $
                      [ "tar cjf ", contextPkg, " -C ", cc_dataDir
+                     , " "
                      ] ++ intersperse " " (map (FP.encodeString . localName . fst) targetedFiles)
              unless (null targetedFiles) $
                     do ecTar <- system tarCmd

@@ -92,8 +92,7 @@ RUN ln -s /usr/bin/nodejs /usr/bin/node
 ```
 BASE COOK system.cook
 INCLUDE package.json
-RUN mkdir /app
-ADD package.json /app/package.json
+UNPACK /app
 WORKDIR /app
 RUN npm install
 ```
@@ -102,7 +101,7 @@ RUN npm install
 ```
 BASE COOK node-pkg.cook
 INCLUDE *.js
-ADD . /app
+UNPACK /app
 CMD node ./app.js
 ```
 
