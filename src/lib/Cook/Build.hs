@@ -124,8 +124,8 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
            imageTag = T.unpack $ unDockerImage imageName
        logInfo $ "Include files: " ++ (show $ length targetedFiles)
                    ++ " FileHashCount: " ++ (show $ length allFHashes)
-                   ++ " Docker: " ++ (show $ B16.encode $ unSha1 dockerHash)
-                   ++ " BuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
+                   ++ "\nDocker: " ++ (show $ B16.encode $ unSha1 dockerHash)
+                   ++ "\nBuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
        logInfo' $ "Image name will be " ++ imageTag
        let markImage =
                do markUsingImage stateManager imageName (Just baseImage)
