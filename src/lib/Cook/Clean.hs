@@ -14,7 +14,7 @@ import qualified Data.Text as T
 
 cookClean :: FilePath -> Int -> Bool -> IO ()
 cookClean stateDir daysToKeep dryRun =
-    do stateManager' <- createStateManager stateDir
+    do (stateManager', _) <- createStateManager stateDir
        stateManager <-
            if dryRun
            then do logInfo "Dry run cook clean..."

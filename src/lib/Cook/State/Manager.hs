@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 module Cook.State.Manager
-    ( StateManager
+    ( StateManager, HashManager
     , createStateManager, markUsingImage
     , isImageKnown, fastFileHash
     , garbageCollectImages
@@ -17,6 +17,8 @@ import Cook.State.Model
 import Cook.Types
 
 import Control.Applicative
+import Control.Concurrent
+import Control.Exception
 import Control.Concurrent.STM
 import Control.Monad
 import Control.Monad.Logger hiding (logInfo)
@@ -41,6 +43,7 @@ import qualified Data.Graph.NodeManager as NM
 import qualified Data.Graph.Persistence as GP
 import qualified Data.Text as T
 import qualified Data.Traversable as T
+import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 
 data StateManager
@@ -51,6 +54,14 @@ data StateManager
    , sm_nodeManager :: TVar (NM.NodeManager DockerImage)
    , sm_persistGraph :: IO ()
    }
+
+data HashManager
+   = HashManager
+   { hm_lookup :: forall m. MonadIO m => FilePath -> m SHA1 -> m SHA1
+   }
+
+fastFileHash :: forall m. MonadIO m => HashManager -> FilePath -> m SHA1 -> m SHA1
+fastFileHash hm = hm_lookup hm
 
 mkTempStateManager :: StateManager -> IO StateManager
 mkTempStateManager (StateManager{..}) =
@@ -71,7 +82,7 @@ mkTempStateManager (StateManager{..}) =
                   , sm_persistGraph = return ()
                   }
 
-createStateManager :: FilePath -> IO StateManager
+createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
     do pool <- createSqlitePool (T.pack sqlLoc) 5
        let runSql = runResourceT . runNoLoggingT . ((flip runSqlPool) pool)
@@ -89,13 +100,28 @@ createStateManager stateDirectory =
                           in (,) <$> newTVarIO lg <*> newTVarIO lnm
              False ->
                  (,) <$> newTVarIO G.empty <*> newTVarIO NM.emptyNodeManager
-       return $ StateManager
-                { sm_runSql = runSql
-                , sm_databaseFile = stateDirectory </> "database.db"
-                , sm_graph = g
-                , sm_nodeManager = nm
-                , sm_persistGraph = persistGraph g nm
-                }
+       let stateMgr =
+               StateManager
+               { sm_runSql = runSql
+               , sm_databaseFile = stateDirectory </> "database.db"
+               , sm_graph = g
+               , sm_nodeManager = nm
+               , sm_persistGraph = persistGraph g nm
+               }
+       allHashes <- runSql $ selectList [] []
+       let hashMap =
+               foldl (\hm entity ->
+                          let v = entityVal entity
+                          in HM.insert (dbHashCacheFullPath v) (dbHashCacheMtime v, SHA1 $ dbHashCacheHash v) hm
+                     ) HM.empty allHashes
+       hashMapV <- newTVarIO hashMap
+       hashWriteChan <- newTBQueueIO 1000
+       _ <- forkIO (hashManagerPersistWorker stateMgr hashWriteChan)
+       let hashMgr =
+               HashManager
+               { hm_lookup = hashManagerLookup stateMgr hashMapV hashWriteChan
+               }
+       return (stateMgr, hashMgr)
     where
       sqlLoc = stateDirectory </> "database.db"
       graphFile = stateDirectory </> "graph.bin"
@@ -104,21 +130,58 @@ createStateManager stateDirectory =
              g <- atomically $ readTVar gVar
              BS.writeFile graphFile $ runPut (safePut $ GP.persistGraph nm g)
 
-fastFileHash :: MonadIO m => StateManager -> FilePath -> m SHA1 -> m SHA1
-fastFileHash (StateManager{..}) fullFilePath computeHash =
+hashManagerPersistWorker :: StateManager -> TBQueue DbHashCache -> IO ()
+hashManagerPersistWorker (StateManager{..}) hashWriteChan =
+    do batchV <- newTVarIO V.empty
+       _ <- forkIO (batchBuilder batchV)
+       loop batchV
+    where
+      batchBuilder batchV =
+          do writeOp <- atomically $ readTBQueue hashWriteChan
+             atomically $ modifyTVar' batchV (\v -> V.snoc v writeOp)
+      loop batchV =
+          do writeBatch <-
+                 atomically $
+                   do v <- readTVar batchV
+                      when (V.null v) retry
+                      writeTVar batchV V.empty
+                      return v
+             let sqlAction =
+                     sm_runSql $
+                          do let xs = V.toList writeBatch
+                             deleteWhere [DbHashCacheFullPath <-. (map dbHashCacheFullPath xs)]
+                             _ <- insertMany xs
+                             return ()
+             sqlAction `catch` \(e :: SomeException) ->
+                 do putStrLn $ "Hash persist error: " ++ show e
+                    atomically $ modifyTVar' batchV (\newV -> V.concat [writeBatch, newV])
+             threadDelay 2000000 -- 2 sec
+             loop batchV
+
+hashManagerLookup :: MonadIO m
+                  => StateManager
+                  -> TVar (HM.HashMap FilePath (UTCTime, SHA1))
+                  -> TBQueue DbHashCache
+                  -> FilePath
+                  -> m SHA1
+                  -> m SHA1
+hashManagerLookup (StateManager{..}) hashMapV hashWriteChan fullFilePath computeHash =
     do stat <- liftIO $ getFileStatus fullFilePath
        let modTime = (\t -> posixSecondsToUTCTime (realToFrac t :: POSIXTime)) $ modificationTime stat
-       mEntry <- liftIO $ sm_runSql $ getBy (UniqueHashCacheEntry fullFilePath modTime)
+       mEntry <- liftIO $ atomically $ HM.lookup fullFilePath <$> readTVar hashMapV
+       let recomputeHash =
+               do newHash <- computeHash
+                  liftIO $ atomically $
+                    do modifyTVar' hashMapV (HM.insert fullFilePath (modTime, newHash))
+                       writeTBQueue hashWriteChan (DbHashCache fullFilePath modTime (unSha1 newHash))
+                  return newHash
        case mEntry of
-         Just entry ->
-             return $ SHA1 $ dbHashCacheHash $ entityVal entry
+         Just (mtime, oldHash) ->
+             if mtime == modTime
+             then return oldHash
+             else recomputeHash
          Nothing ->
-             do h <- computeHash
-                _ <-
-                    liftIO $ sm_runSql $
-                      do deleteWhere [DbHashCacheFullPath ==. fullFilePath]
-                         insert (DbHashCache fullFilePath modTime (unSha1 h))
-                return h
+             recomputeHash
 
 data GCState
    = GCState

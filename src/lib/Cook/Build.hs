@@ -46,8 +46,8 @@ fixTailingSlash s =
       ('/':_) -> s
       d -> reverse ('/':d)
 
-makeDirectoryFileHashTable :: StateManager -> (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
-makeDirectoryFileHashTable st ignore (FP.decodeString . fixTailingSlash -> root) =
+makeDirectoryFileHashTable :: HashManager -> (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
+makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> root) =
     do currentDir <- getCurrentDirectory
        let fullRoot = currentDir </> FP.encodeString root
        logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This will take some time..."
@@ -74,7 +74,7 @@ makeDirectoryFileHashTable st ignore (FP.decodeString . fixTailingSlash -> root)
                          do bs <- C.sourceFile relToCurrentF $$ C.sinkList
                             liftIO $ hPutStr stderr "#"
                             return $! quickHash bs
-                 hash <- fastFileHash st fullFilePath hashComp
+                 hash <- fastFileHash hMgr fullFilePath hashComp
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, hash)
 
@@ -221,9 +221,9 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
 
 cookBuild :: CookConfig -> Maybe StreamHook -> IO [DockerImage]
 cookBuild cfg@(CookConfig{..}) mStreamHook =
-    do stateManager <- createStateManager cc_stateDir
+    do (stateManager, hashManager) <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
-       fileHashes <- makeDirectoryFileHashTable stateManager (isBoring boring)  cc_dataDir
+       fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
        res <- mapM (buildImage mStreamHook cfg stateManager fileHashes) roots
