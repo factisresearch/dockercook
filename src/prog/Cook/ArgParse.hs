@@ -52,6 +52,15 @@ cookFileDropP =
     metavar "COUNT" <>
     help "drop this number of characters from each cook filename for tagging"
 
+cookVerboseP :: Parser Int
+cookVerboseP =
+    option $
+    long "verbosity" <>
+    short 'v' <>
+    metavar "INT" <>
+    value 2 <>
+    help "log levels for 0 - 3"
+
 cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
                            <> help "File with regex list of ignored files." )
@@ -80,8 +89,12 @@ cookHelp :: Parser CookCmd
 cookHelp =
     pure CookList
 
-argParse :: Parser CookCmd
+argParse :: Parser (Int, CookCmd)
 argParse =
+    (,) <$> cookVerboseP <*> argParse'
+
+argParse' :: Parser CookCmd
+argParse' =
     subparser
     (  command "cook" (info cookOptions ( progDesc "Cook docker images" ))
     <> command "clean" (info cookClean ( progDesc "Cleanup docker images that are no longer needed" ))

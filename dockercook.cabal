@@ -1,5 +1,5 @@
 name:                dockercook
-version:             0.1.3.0
+version:             0.2.0.0
 synopsis:            A build tool for multiple docker image layers
 description:         Build and manage multiple docker image layers to speed up deployment
 license:             MIT
@@ -15,8 +15,8 @@ cabal-version:       >=1.8
 
 library
   hs-source-dirs:      src/lib
-  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types
-  other-modules:       Cook.Util, Cook.State.Manager, Cook.State.Model
+  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types, Cook.Util
+  other-modules:       Cook.State.Manager, Cook.State.Model
   build-depends:       base >=4.6 && <4.8,
                        attoparsec >=0.11 && <0.13,
                        base16-bytestring >=0.1 && <0.2,
@@ -25,6 +25,7 @@ library
                        cryptohash >=0.11 && <0.12,
                        directory >=1.2 && <1.3,
                        filepath >=1.3 && <1.4,
+                       hslogger >=1.2 && <1.3,
                        conduit-combinators >=0.2 && <0.3,
                        conduit-extra >=1.1 && <1.2,
                        resourcet >=1.1 && <1.2,
@@ -56,6 +57,7 @@ executable dockercook
   build-depends:       base ==4.6.*,
                        dockercook,
                        filepath >= 1.3 && <1.4,
+                       hslogger >=1.2 && <1.3,
                        optparse-applicative >=0.8 && <0.9
   hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures

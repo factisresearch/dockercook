@@ -21,7 +21,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Concurrent.STM
 import Control.Monad
-import Control.Monad.Logger hiding (logInfo)
+import Control.Monad.Logger hiding (logInfo, logDebug, logError)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
 import Data.Maybe
@@ -84,7 +84,8 @@ mkTempStateManager (StateManager{..}) =
 
 createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
-    do pool <- createSqlitePool (T.pack sqlLoc) 5
+    do logDebug $ "Creating state manager with directory " ++ stateDirectory
+       pool <- createSqlitePool (T.pack sqlLoc) 5
        let runSql = runResourceT . runNoLoggingT . ((flip runSqlPool) pool)
        runSql (runMigration migrateState)
        exists <- doesFileExist graphFile
@@ -108,6 +109,7 @@ createStateManager stateDirectory =
                , sm_nodeManager = nm
                , sm_persistGraph = persistGraph g nm
                }
+       logDebug $ "Initializing hash manager"
        allHashes <- runSql $ selectList [] []
        let hashMap =
                foldl (\hm entity ->
@@ -151,9 +153,10 @@ hashManagerPersistWorker (StateManager{..}) hashWriteChan =
                           do let xs = V.toList writeBatch
                              deleteWhere [DbHashCacheFullPath <-. (map dbHashCacheFullPath xs)]
                              _ <- insertMany xs
+                             logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
                              return ()
              sqlAction `catch` \(e :: SomeException) ->
-                 do putStrLn $ "Hash persist error: " ++ show e
+                 do logError $ "Hash persist error: " ++ show e
                     atomically $ modifyTVar' batchV (\newV -> V.concat [writeBatch, newV])
              threadDelay 2000000 -- 2 sec
              loop batchV
@@ -204,7 +207,7 @@ garbageCollectImages (StateManager{..}) deletePred deleteFun =
     do graph <- atomically $ readTVar sm_graph
        nodeManager <- atomically $ readTVar sm_nodeManager
        let graphLeafs = filter (\n -> VU.null $ G.parents graph n) (G.nodes graph)
-       logInfo ("Found " ++ (show (length graphLeafs)) ++ " toplevel image(s). Starting mark and sweep")
+       logDebug ("Found " ++ (show (length graphLeafs)) ++ " toplevel image(s). Starting mark and sweep")
        gcState <- execStateT (mapM (markNode graph nodeManager) graphLeafs) (GCState HM.empty 0 HM.empty)
        logInfo ("Found " ++ (show (gc_trashCount gcState)) ++ " deletable image(s).")
        sweepState <- execStateT (sweepNodes gcState nodeManager graphLeafs) (SweepState graph [])

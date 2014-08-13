@@ -28,11 +28,11 @@ cookClean stateDir daysToKeep dryRun =
                    do logInfo $ "Would delete " ++ show imageName
                       return True
                | otherwise =
-                   do logInfo $ "Deleting image " ++ show imageName
+                   do logDebug $ "Deleting image " ++ show imageName
                       (ec, _, stdErr) <-
                           readProcessWithExitCode "docker" ["rmi", T.unpack imageName] ""
                       if (ec /= ExitSuccess)
-                      then do logInfo $ "Error: " ++ stdErr
+                      then do logError $ "Error: " ++ stdErr
                               return False
                       else return True
        _ <- garbageCollectImages stateManager cleanUpPred dockerRm

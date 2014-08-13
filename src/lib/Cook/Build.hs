@@ -53,7 +53,7 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
        logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This will take some time..."
        x <- runResourceT $! C.sourceDirectoryDeep False root =$= C.concatMapM (hashFile fullRoot) $$ C.sinkList
        hPutStr stderr "\n"
-       logInfo "Done hashing your repo!"
+       logDebug "Done hashing your repo!"
        return x
     where
       hashFile fullRoot relToCurrentF =
@@ -80,7 +80,7 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
 
 buildImage :: Maybe StreamHook -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
 buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
-    do logInfo $ "Inspecting " ++ name ++ "..."
+    do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
@@ -91,7 +91,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                     if baseExists
                     then do markUsingImage stateManager rootImage Nothing
                             return rootImage
-                    else do logInfo' $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
+                    else do logDebug' $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
                             (ec, stdOut, _) <-
                                 readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
@@ -100,7 +100,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
 
-       logInfo $ "Computing hashes for " ++ name
+       logDebug $ "Computing hashes for " ++ name
        let contextAdd =
                case bf_unpackTarget bf of
                  Nothing -> ""
@@ -122,30 +122,43 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
            imageTag = T.unpack $ unDockerImage imageName
-       logInfo $ "Include files: " ++ (show $ length targetedFiles)
+       logDebug $ "Include files: " ++ (show $ length targetedFiles)
                    ++ " FileHashCount: " ++ (show $ length allFHashes)
                    ++ "\nDocker: " ++ (show $ B16.encode $ unSha1 dockerHash)
                    ++ "\nBuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
-       logInfo' $ "Image name will be " ++ imageTag
-       let markImage =
+       logDebug' $ "Image name will be " ++ imageTag
+       let mUserTagName =
+               fmap (\prefix -> prefix ++ drop cc_cookFileDropCount name) cc_tagprefix
+           markImage =
                do markUsingImage stateManager imageName (Just baseImage)
-                  F.forM_ cc_tagprefix $ \prefix ->
-                      do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ prefix ++ drop cc_cookFileDropCount name) streamHook
+                  F.forM_ mUserTagName $ \userTag ->
+                      do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ userTag) streamHook
                          return ()
+           announceBegin =
+               hPutStr stderr (name ++ "... \t\t")
+           tagInfo =
+               fromMaybe "" $ fmap (\userTag -> " --> " ++ userTag) mUserTagName
+           nameTagArrow =
+               imageTag ++ tagInfo
 
+       announceBegin
        imageExists <- dockerImageExists imageName
        if imageExists
-       then do logInfo' "The image already exists!"
+       then do hPutStrLn stderr ("found " ++ nameTagArrow)
+               logDebug' "The image already exists!"
                markImage
                return imageName
-       else do logInfo' "Image not found!"
+       else do hPutStrLn stderr ("building " ++ imageTag)
+               logDebug' "Image not found!"
                x <- launchImageBuilder dockerBS imageName
                markImage
+               announceBegin
+               hPutStrLn stderr ("built " ++ nameTagArrow)
                return x
     where
       name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
-      logInfo' m =
-          do logInfo m
+      logDebug' m =
+          do logDebug m
              case mStreamHook of
                Nothing -> return ()
                Just (StreamHook hook) -> hook (BSC.pack (m ++ "\n"))
@@ -156,10 +169,10 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                Nothing -> return ()
                Just (StreamHook hook) -> hook bs
       dockerImageExists localIm@(DockerImage imageName) =
-          do logInfo' $ "Checking if the image " ++ show imageName ++ " is already present... "
+          do logDebug' $ "Checking if the image " ++ show imageName ++ " is already present... "
              known <- isImageKnown stateManager localIm
              if known
-             then do logInfo' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
+             then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      return True
              else do (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
                      let imageLines = T.lines $ T.pack stdOut
@@ -192,16 +205,16 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
           withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
           do case bf_unpackTarget bf of
                Nothing ->
-                   logInfo' "No UNPACK directive. Won't copy any context!"
+                   logDebug' "No UNPACK directive. Won't copy any context!"
                Just _ ->
-                   do logInfo' "Compressing context..."
+                   do logDebug' "Compressing context..."
                       compressContext tempDir
-             logInfo' "Writing Dockerfile ..."
+             logDebug' "Writing Dockerfile ..."
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->
                  do ec <- systemStream (Just tempDir) cmd streamHook
                     unless (ec == ExitSuccess) (fail $ "Preparation command failed: " ++ cmd)
-             logInfo' ("Building " ++ name ++ "...")
+             logDebug' ("Building " ++ name ++ "...")
              let tag = T.unpack $ unDockerImage imageName
              ecDocker <- systemStream Nothing ("docker build --rm -t " ++ tag ++ " " ++ tempDir) streamHook
              if ecDocker == ExitSuccess
@@ -243,5 +256,5 @@ prepareEntryPoint buildFileDir (BuildFileId entryPoint) =
          Left errMsg ->
              error ("Failed to parse EntryPoint " ++ show n ++ ": " ++ errMsg)
          Right ep ->
-             do logInfo $ "Parsed " ++ show n ++ " ..."
+             do logDebug $ "Parsed " ++ show n ++ " ..."
                 return ep
