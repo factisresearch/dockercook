@@ -84,7 +84,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
-                 do parent <- prepareEntryPoint cc_buildFileDir parentBuildFile
+                 do parent <- prepareEntryPoint cfg parentBuildFile
                     buildImage mStreamHook cfg stateManager fileHashes parent
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
@@ -100,7 +100,6 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
 
-       logDebug $ "Computing hashes for " ++ name
        let contextAdd =
                case bf_unpackTarget bf of
                  Nothing -> ""
@@ -238,7 +237,7 @@ cookBuild cfg@(CookConfig{..}) mStreamHook =
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
        roots <-
-           mapM ((prepareEntryPoint cc_buildFileDir) . BuildFileId . T.pack) cc_buildEntryPoints
+           mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
        res <- mapM (buildImage mStreamHook cfg stateManager fileHashes) roots
        logInfo "All done!"
        return res
@@ -248,10 +247,11 @@ cookBuild cfg@(CookConfig{..}) mStreamHook =
       isBoring boring fp =
           any (isJust . flip matchRegex (FP.encodeString fp)) boring
 
-prepareEntryPoint :: FilePath -> BuildFileId -> IO BuildFile
-prepareEntryPoint buildFileDir (BuildFileId entryPoint) =
-    do let n = buildFileDir </> (T.unpack entryPoint)
-       mRes <- parseBuildFile n
+prepareEntryPoint :: CookConfig -> BuildFileId -> IO BuildFile
+prepareEntryPoint cfg (BuildFileId entryPoint) =
+    do let buildFileDir = cc_buildFileDir cfg
+           n = buildFileDir </> (T.unpack entryPoint)
+       mRes <- parseBuildFile cfg n
        case mRes of
          Left errMsg ->
              error ("Failed to parse EntryPoint " ++ show n ++ ": " ++ errMsg)

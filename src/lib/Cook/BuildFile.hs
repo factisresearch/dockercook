@@ -2,8 +2,10 @@
 module Cook.BuildFile
     ( BuildFileId(..), BuildFile(..), BuildBase(..), DockerCommand(..)
     , dockerCmdToText
-    , parseBuildFile, parseBuildFileText
+    , parseBuildFile
     , FilePattern, matchesFilePattern, parseFilePattern
+    -- don't use - only exported for testing
+    , parseBuildFileText
     )
 where
 
@@ -13,6 +15,9 @@ import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
 import Data.Char
 import Data.List (find)
+import System.Process (readProcessWithExitCode)
+import System.Exit (ExitCode(..))
+import qualified Data.Foldable as F
 import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -88,7 +93,7 @@ constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
 constructBuildFile fp theLines =
     case baseLine of
       Just (BaseLine base) ->
-         baseCheck base $ foldl handleLine (BuildFile myId base Nothing V.empty V.empty V.empty) theLines
+         baseCheck base $ F.foldl' handleLine (BuildFile myId base Nothing V.empty V.empty V.empty) theLines
       _ ->
           Left "Missing BASE line!"
     where
@@ -118,10 +123,22 @@ constructBuildFile fp theLines =
                 buildFile { bf_unpackTarget = Just unpackTarget }
             _ -> buildFile
 
-parseBuildFile :: FilePath -> IO (Either String BuildFile)
-parseBuildFile fp =
-    do t <- T.readFile fp
-       return $ parseBuildFileText fp t
+parseBuildFile :: CookConfig -> FilePath -> IO (Either String BuildFile)
+parseBuildFile cfg fp
+    | cc_m4 cfg =
+        do (exc, out, err) <- readProcessWithExitCode "m4" ["-I", cc_buildFileDir cfg, fp] ""
+           case exc of
+             ExitSuccess
+                 | null err -> return (parseBuildFileText fp (T.pack out))
+                 | otherwise ->
+                   return (Left ("m4 succeeded but produced output on stderr "
+                                 ++ " while processing " ++ fp ++ ": " ++ err))
+             ExitFailure code ->
+                 return (Left ("m4 failed with exit code " ++ show code
+                               ++ " while processing " ++ fp ++ ": " ++ err))
+    | otherwise =
+        do t <- T.readFile fp
+           return $ parseBuildFileText fp t
 
 parseBuildFileText :: FilePath -> T.Text -> Either String BuildFile
 parseBuildFileText fp t =

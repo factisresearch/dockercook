@@ -70,6 +70,11 @@ dryRunP =
     ( long "dry-run"
       <> help "Don't really delete anything" )
 
+cookM4P =
+    switch
+    ( long "m4"
+      <> help "Apply m4 preprocessor to cook files" )
+
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
@@ -79,7 +84,8 @@ cookOptions =
                 <*> cookBoringP
                 <*> cookTagP
                 <*> cookFileDropP
-                <*> cookEntryPointP)
+                <*> cookEntryPointP
+                <*> cookM4P)
 
 cookClean :: Parser CookCmd
 cookClean =
