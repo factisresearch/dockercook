@@ -233,7 +233,8 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
 
 cookBuild :: CookConfig -> Maybe StreamHook -> IO [DockerImage]
 cookBuild cfg@(CookConfig{..}) mStreamHook =
-    do (stateManager, hashManager) <- createStateManager cc_stateDir
+    do createDirectoryIfMissing True cc_stateDir
+       (stateManager, hashManager) <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
        roots <-
