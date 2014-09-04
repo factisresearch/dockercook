@@ -153,7 +153,7 @@ hashManagerPersistWorker (StateManager{..}) hashWriteChan =
              let sqlAction =
                      sm_runSql $
                           do let xs = V.toList writeBatch
-                             deleteWhere [DbHashCacheFullPath <-. (map dbHashCacheFullPath xs)]
+                             mapM_ (\oldHash -> deleteWhere [DbHashCacheFullPath ==. oldHash]) (map dbHashCacheFullPath xs)
                              _ <- insertMany xs
                              logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
                              return ()
