@@ -47,7 +47,7 @@ data BuildFileLine
    | BaseLine BuildBase         -- use either cook file or docker image as base
    | PrepareLine T.Text         -- run shell command in temporary cook directory
    | UnpackLine FilePath        -- where should the context be unpacked to?
-   | ScriptLine FilePath        -- execute a script in cook directory to generate more cook commands
+   | ScriptLine FilePath T.Text        -- execute a script in cook directory to generate more cook commands
    | DockerLine DockerCommand   -- regular docker command
    deriving (Show, Eq)
 
@@ -122,17 +122,18 @@ constructBuildFile cookDir fp theLines =
                 return $ Left err
             Right buildFile ->
                 case line of
-                  ScriptLine scriptPath ->
-                      do (ec, stdOut, stdErr) <-
-                                readProcessWithExitCode "bash" [cookDir </> scriptPath] ""
+                  ScriptLine scriptLoc args ->
+                      do let bashCmd = (cookDir </> scriptLoc) ++ " " ++ T.unpack args
+                         (ec, stdOut, stdErr) <-
+                                readProcessWithExitCode "bash" ["-c", bashCmd] ""
                          if ec == ExitSuccess
                          then case parseOnly pBuildFile (T.pack stdOut) of
                                 Left parseError ->
-                                    return $ Left ("Failed to parse output of SCRIPT line " ++ cookDir </> scriptPath
+                                    return $ Left ("Failed to parse output of SCRIPT line " ++ bashCmd
                                                    ++ ": " ++ parseError ++ "\nOutput was:\n" ++ stdOut)
                                 Right moreLines ->
                                     handleLine mBuildFile (moreLines ++ rest)
-                         else return $ Left ("Failed to run SCRIPT line " ++ cookDir </> scriptPath
+                         else return $ Left ("Failed to run SCRIPT line " ++ bashCmd
                                              ++ ": " ++ stdOut ++ "\n" ++ stdErr)
                   DockerLine dockerCmd ->
                       handleLine (Right $ buildFile { bf_dockerCommands = V.snoc (bf_dockerCommands buildFile) dockerCmd }) rest
@@ -192,7 +193,7 @@ pBuildFile =
           BaseLine <$> (pBuildBase <* finish) <|>
           PrepareLine <$> (pPrepareLine <* finish) <|>
           UnpackLine <$> (pUnpackLine <* finish) <|>
-          ScriptLine <$> (pScriptLine <* finish) <|>
+          (pScriptLine <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
 
 pUnpackLine :: Parser FilePath
@@ -224,9 +225,10 @@ pIncludeLine :: Parser FilePattern
 pIncludeLine =
     (asciiCI "INCLUDE" *> skipSpace) *> pFilePattern
 
-pScriptLine :: Parser FilePath
+pScriptLine :: Parser BuildFileLine
 pScriptLine =
-    T.unpack <$> ((asciiCI "SCRIPT" *> skipSpace) *> takeWhile1 isValidFileNameChar)
+    ScriptLine <$> (T.unpack <$> ((asciiCI "SCRIPT" *> skipSpace) *> (takeWhile1 isValidFileNameChar)))
+               <*> (T.stripEnd <$> takeWhile1 (not . eolOrComment))
 
 pPrepareLine :: Parser T.Text
 pPrepareLine =
