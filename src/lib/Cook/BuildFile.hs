@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DoAndIfThenElse #-}
 module Cook.BuildFile
     ( BuildFileId(..), BuildFile(..), BuildBase(..), DockerCommand(..)
     , dockerCmdToText
@@ -15,9 +16,9 @@ import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
 import Data.Char
 import Data.List (find)
+import System.FilePath
 import System.Process (readProcessWithExitCode)
 import System.Exit (ExitCode(..))
-import qualified Data.Foldable as F
 import qualified Data.Vector as V
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -46,6 +47,7 @@ data BuildFileLine
    | BaseLine BuildBase         -- use either cook file or docker image as base
    | PrepareLine T.Text         -- run shell command in temporary cook directory
    | UnpackLine FilePath        -- where should the context be unpacked to?
+   | ScriptLine FilePath        -- execute a script in cook directory to generate more cook commands
    | DockerLine DockerCommand   -- regular docker command
    deriving (Show, Eq)
 
@@ -89,21 +91,21 @@ matchesFilePattern (FilePattern (x : xs)) fp =
                 matchesFilePattern (FilePattern xs) fp
             [] -> True
 
-constructBuildFile :: FilePath -> [BuildFileLine] -> Either String BuildFile
-constructBuildFile fp theLines =
+constructBuildFile :: FilePath -> FilePath -> [BuildFileLine] -> IO (Either String BuildFile)
+constructBuildFile cookDir fp theLines =
     case baseLine of
       Just (BaseLine base) ->
-         baseCheck base $ F.foldl' handleLine (BuildFile myId base Nothing V.empty V.empty V.empty) theLines
+          baseCheck base $ handleLine (Right $ BuildFile myId base Nothing V.empty V.empty V.empty) theLines
       _ ->
-          Left "Missing BASE line!"
+          return $ Left "Missing BASE line!"
     where
       baseCheck base onSuccess =
           case base of
             BuildBaseCook cookId ->
                 if cookId == myId
-                then Left "Recursive BASE line! You are referencing yourself."
-                else Right onSuccess
-            _ -> Right onSuccess
+                then return $ Left "Recursive BASE line! You are referencing yourself."
+                else onSuccess
+            _ -> onSuccess
       myId =
           BuildFileId (T.pack fp)
       baseLine =
@@ -111,17 +113,37 @@ constructBuildFile fp theLines =
               case l of
                 BaseLine _ -> True
                 _ -> False
-      handleLine buildFile line =
-          case line of
-            DockerLine dockerCmd ->
-                buildFile { bf_dockerCommands = V.snoc (bf_dockerCommands buildFile) dockerCmd }
-            IncludeLine pattern ->
-                buildFile { bf_include = V.snoc (bf_include buildFile) pattern }
-            PrepareLine cmd ->
-                buildFile { bf_prepare = V.snoc (bf_prepare buildFile) cmd }
-            UnpackLine unpackTarget ->
-                buildFile { bf_unpackTarget = Just unpackTarget }
-            _ -> buildFile
+
+      handleLine mBuildFile [] =
+          return mBuildFile
+      handleLine mBuildFile (line : rest) =
+          case mBuildFile of
+            Left err ->
+                return $ Left err
+            Right buildFile ->
+                case line of
+                  ScriptLine scriptPath ->
+                      do (ec, stdOut, stdErr) <-
+                                readProcessWithExitCode "bash" [cookDir </> scriptPath] ""
+                         if ec == ExitSuccess
+                         then case parseOnly pBuildFile (T.pack stdOut) of
+                                Left parseError ->
+                                    return $ Left ("Failed to parse output of SCRIPT line " ++ cookDir </> scriptPath
+                                                   ++ ": " ++ parseError ++ "\nOutput was:\n" ++ stdOut)
+                                Right moreLines ->
+                                    handleLine mBuildFile (moreLines ++ rest)
+                         else return $ Left ("Failed to run SCRIPT line " ++ cookDir </> scriptPath
+                                             ++ ": " ++ stdOut ++ "\n" ++ stdErr)
+                  DockerLine dockerCmd ->
+                      handleLine (Right $ buildFile { bf_dockerCommands = V.snoc (bf_dockerCommands buildFile) dockerCmd }) rest
+                  IncludeLine pattern ->
+                      handleLine (Right $ buildFile { bf_include = V.snoc (bf_include buildFile) pattern }) rest
+                  PrepareLine cmd ->
+                      handleLine (Right $ buildFile { bf_prepare = V.snoc (bf_prepare buildFile) cmd }) rest
+                  UnpackLine unpackTarget ->
+                      handleLine (Right $ buildFile { bf_unpackTarget = Just unpackTarget }) rest
+                  _ ->
+                      handleLine mBuildFile rest
 
 parseBuildFile :: CookConfig -> FilePath -> IO (Either String BuildFile)
 parseBuildFile cfg fp
@@ -129,7 +151,8 @@ parseBuildFile cfg fp
         do (exc, out, err) <- readProcessWithExitCode "m4" ["-I", cc_buildFileDir cfg, fp] ""
            case exc of
              ExitSuccess
-                 | null err -> return (parseBuildFileText fp (T.pack out))
+                 | null err ->
+                     parseBuildFileText cfg fp (T.pack out)
                  | otherwise ->
                    return (Left ("m4 succeeded but produced output on stderr "
                                  ++ " while processing " ++ fp ++ ": " ++ err))
@@ -138,14 +161,15 @@ parseBuildFile cfg fp
                                ++ " while processing " ++ fp ++ ": " ++ err))
     | otherwise =
         do t <- T.readFile fp
-           return $ parseBuildFileText fp t
+           parseBuildFileText cfg fp t
 
-parseBuildFileText :: FilePath -> T.Text -> Either String BuildFile
-parseBuildFileText fp t =
+parseBuildFileText :: CookConfig -> FilePath -> T.Text -> IO (Either String BuildFile)
+parseBuildFileText cfg fp t =
     case parseOnly pBuildFile t of
-      Left err -> Left err
+      Left err ->
+          return $ Left err
       Right theLines ->
-          constructBuildFile fp theLines
+          constructBuildFile (cc_buildFileDir cfg) fp theLines
 
 parseFilePattern :: T.Text -> Either String FilePattern
 parseFilePattern pattern =
@@ -168,6 +192,7 @@ pBuildFile =
           BaseLine <$> (pBuildBase <* finish) <|>
           PrepareLine <$> (pPrepareLine <* finish) <|>
           UnpackLine <$> (pUnpackLine <* finish) <|>
+          ScriptLine <$> (pScriptLine <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
 
 pUnpackLine :: Parser FilePath
@@ -198,6 +223,10 @@ pComment =
 pIncludeLine :: Parser FilePattern
 pIncludeLine =
     (asciiCI "INCLUDE" *> skipSpace) *> pFilePattern
+
+pScriptLine :: Parser FilePath
+pScriptLine =
+    T.unpack <$> ((asciiCI "SCRIPT" *> skipSpace) *> takeWhile1 isValidFileNameChar)
 
 pPrepareLine :: Parser T.Text
 pPrepareLine =
