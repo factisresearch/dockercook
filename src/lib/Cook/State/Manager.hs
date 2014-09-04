@@ -141,8 +141,10 @@ hashManagerPersistWorker (StateManager{..}) hashWriteChan =
       batchBuilder batchV =
           do writeOp <- atomically $ readTBQueue hashWriteChan
              atomically $ modifyTVar' batchV (\v -> V.snoc v writeOp)
+             batchBuilder batchV
       loop batchV =
-          do writeBatch <-
+          do logDebug $ "Waiting for next hash batch to arrive"
+             writeBatch <-
                  atomically $
                    do v <- readTVar batchV
                       when (V.null v) retry
@@ -155,6 +157,7 @@ hashManagerPersistWorker (StateManager{..}) hashWriteChan =
                              _ <- insertMany xs
                              logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
                              return ()
+             logDebug $ "Storing " ++ (show $ V.length writeBatch) ++ " hashes in database."
              sqlAction `catch` \(e :: SomeException) ->
                  do logError $ "Hash persist error: " ++ show e
                     atomically $ modifyTVar' batchV (\newV -> V.concat [writeBatch, newV])
