@@ -16,6 +16,7 @@ import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
 import Data.Char
 import Data.List (find)
+import Data.Maybe
 import System.FilePath
 import System.Process (readProcessWithExitCode)
 import System.Exit (ExitCode(..))
@@ -47,7 +48,7 @@ data BuildFileLine
    | BaseLine BuildBase         -- use either cook file or docker image as base
    | PrepareLine T.Text         -- run shell command in temporary cook directory
    | UnpackLine FilePath        -- where should the context be unpacked to?
-   | ScriptLine FilePath T.Text        -- execute a script in cook directory to generate more cook commands
+   | ScriptLine FilePath (Maybe T.Text)  -- execute a script in cook directory to generate more cook commands
    | DockerLine DockerCommand   -- regular docker command
    deriving (Show, Eq)
 
@@ -122,8 +123,8 @@ constructBuildFile cookDir fp theLines =
                 return $ Left err
             Right buildFile ->
                 case line of
-                  ScriptLine scriptLoc args ->
-                      do let bashCmd = (cookDir </> scriptLoc) ++ " " ++ T.unpack args
+                  ScriptLine scriptLoc mArgs ->
+                      do let bashCmd = (cookDir </> scriptLoc) ++ " " ++ T.unpack (fromMaybe "" mArgs)
                          (ec, stdOut, stdErr) <-
                                 readProcessWithExitCode "bash" ["-c", bashCmd] ""
                          if ec == ExitSuccess
@@ -228,7 +229,7 @@ pIncludeLine =
 pScriptLine :: Parser BuildFileLine
 pScriptLine =
     ScriptLine <$> (T.unpack <$> ((asciiCI "SCRIPT" *> skipSpace) *> (takeWhile1 isValidFileNameChar)))
-               <*> (T.stripEnd <$> takeWhile1 (not . eolOrComment))
+               <*> (optional $ T.stripEnd <$> takeWhile1 (not . eolOrComment))
 
 pPrepareLine :: Parser T.Text
 pPrepareLine =
