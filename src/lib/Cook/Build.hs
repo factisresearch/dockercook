@@ -117,7 +117,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                           ]
            dockerHash = quickHash [dockerBS]
            allFHashes = map snd targetedFiles
-           buildFileHash = quickHash [BSC.pack (show bf)]
+           buildFileHash = quickHash [BSC.pack (show $ bf { bf_name = BuildFileId "static" })]
            superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
            imageTag = T.unpack $ unDockerImage imageName
