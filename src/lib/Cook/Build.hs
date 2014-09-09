@@ -190,13 +190,11 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
 
       compressContext tempDir =
           do let contextPkg = tempDir </> "context.tar.gz"
-                 tarCmd =
-                     concat $
-                     [ "tar cjf ", contextPkg, " -C ", cc_dataDir
-                     , " "
-                     ] ++ intersperse " " (map (FP.encodeString . localName . fst) targetedFiles)
+                 tarCmd = "/usr/bin/tar"
+                 tarArgs = ["cjf", contextPkg, "-C", cc_dataDir] ++
+                           (map (FP.encodeString . localName . fst) targetedFiles)
              unless (null targetedFiles) $
-                    do ecTar <- system tarCmd
+                    do ecTar <- rawSystem tarCmd tarArgs
                        unless (ecTar == ExitSuccess) $
                               fail ("Error creating tar of context:\n" ++ tarCmd)
 
