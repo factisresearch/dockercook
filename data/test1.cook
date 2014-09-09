@@ -1,0 +1,32 @@
+BASE COOK 030_dev.cook
+
+INCLUDE 3rdParty/*
+INCLUDE scripts/sbt
+INCLUDE scripts/sbt-launch-0.11.1.jar
+INCLUDE build.sbt
+INCLUDE project/build.properties  
+INCLUDE project/build.sbt         
+INCLUDE project/Build.scala
+INCLUDE project/plugins.sbt
+INCLUDE project/DbMetaSpec.scala  
+INCLUDE project/DbSpec.scala      
+
+UNPACK /DociData
+
+# install binary dependencies
+RUN apt-get install -y imagemagick
+
+# dcmtk
+RUN cd /tmp && wget -O dcmtk.tar.bz2 ftp://dicom.offis.de/pub/dicom/offis/software/dcmtk/dcmtk360/bin/dcmtk-3.6.0-linux-i686-static.tar.bz2
+RUN cd /tmp && tar -xvf dcmtk.tar.bz2
+RUN cp -R /tmp/dcmtk-3.6.0-linux-i686-static/* /usr/local/
+RUN rm -rf /tmp/dcmtk*
+
+# build DociData 3rdParty
+WORKDIR /DociData
+RUN wget -O /tmp/DociCache http://10.20.100.2/DociData-lib.tar.gz
+RUN tar xzvf /tmp/DociCache -C .
+RUN 3rdParty/build.sh
+
+# build DociData dependencies
+RUN scripts/sbt update

@@ -4,10 +4,12 @@ module Tests.BuildFile (htf_thisModulesTests) where
 
 import Cook.BuildFile
 import Cook.Types
+import Paths_dockercook
 
 import Test.Framework
 import qualified Data.Vector as V
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 
 test_matchFilePattern :: IO ()
 test_matchFilePattern =
@@ -23,23 +25,32 @@ test_matchFilePattern =
       Right pattern2 = parseFilePattern "foo/*.cabal"
       Right pattern3 = parseFilePattern "foo/*"
 
+readDataFile :: String -> IO T.Text
+readDataFile name =
+    do fp <- getDataFileName name
+       T.readFile fp
+
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
-    do assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
+    do let dummyCfg = dummyCookConfig
+       parsed1 <- parseBuildFileText dummyCfg "sample1" sampleFile1 >>= assertRight
+       parsed2 <- parseBuildFileText dummyCfg "sample1" sampleFile2 >>= assertRight
+       parsed3 <- parseBuildFileText dummyCfg "sample3" sampleFile3 >>= assertRight
+       parsed4 <- parseBuildFileText dummyCfg "sample3" sampleFile4 >>= assertRight
+       sampleFile5 <- readDataFile "test1.cook"
+       parsed5 <- parseBuildFileText dummyCfg "test1.cook" sampleFile5 >>= assertRight
+       assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
        assertEqual parsed1 parsed2
        assertEqual (BuildBaseCook $ BuildFileId "foo.build") (bf_base parsed3)
        assertEqual commands (bf_dockerCommands parsed3)
        assertEqual parsed3 parsed4
+       assertEqual 10 (V.length (bf_include parsed5))
+       assertEqual (Just "/DociData") (bf_unpackTarget parsed5)
     where
       commands =
           V.fromList [ DockerCommand "RUN" "apt-get -y install node"
                      , DockerCommand "ADD" ". /foo"
                      ]
-      Right parsed1 = parseBuildFileText "sample1" sampleFile1
-      Right parsed2 = parseBuildFileText "sample1" sampleFile2
-      Right parsed3 = parseBuildFileText "sample3" sampleFile3
-      Right parsed4 = parseBuildFileText "sample3" sampleFile4
-
       sampleFile1 =
           "BASE DOCKER ubuntu:14.04"
       sampleFile2 =

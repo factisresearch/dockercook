@@ -32,6 +32,9 @@ runProg' cmd =
           do putStrLn "Available commands:"
              putStrLn "- cook"
              putStrLn "- clean"
+             putStrLn "- parse"
+      CookParse file ->
+          cookParse file
 
 main :: IO ()
 main =

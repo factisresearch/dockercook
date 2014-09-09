@@ -10,6 +10,7 @@ data CookCmd
    = CookBuild CookConfig
    | CookClean FilePath Int Bool
    | CookList
+   | CookParse FilePath
    deriving (Show, Eq)
 
 home :: FilePath
@@ -26,6 +27,14 @@ cookStateP =
     metavar "DIRECTORY" <>
     value (home </> ".dockercook") <>
     help "Directory where dockercook stores its meta info"
+
+cookFileP =
+    strOption $
+    long "file" <>
+    short 'f' <>
+    metavar "FILE" <>
+    value "FILE" <>
+    help "File to parse"
 
 cookTagP =
     optional $
@@ -91,6 +100,10 @@ cookClean :: Parser CookCmd
 cookClean =
     CookClean <$> cookStateP <*> cookKeepDaysP <*> dryRunP
 
+cookParse :: Parser CookCmd
+cookParse =
+    CookParse <$> cookFileP
+
 cookHelp :: Parser CookCmd
 cookHelp =
     pure CookList
@@ -104,5 +117,6 @@ argParse' =
     subparser
     (  command "cook" (info cookOptions ( progDesc "Cook docker images" ))
     <> command "clean" (info cookClean ( progDesc "Cleanup docker images that are no longer needed" ))
+    <> command "parse" (info cookParse ( progDesc "Parse the given file" ))
     <> command "help" (info cookHelp ( progDesc "List cook commands" ))
     )

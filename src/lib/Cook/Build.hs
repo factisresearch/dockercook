@@ -3,7 +3,7 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE PatternGuards #-}
-module Cook.Build (cookBuild) where
+module Cook.Build (cookBuild, cookParse) where
 
 import Cook.BuildFile
 import Cook.State.Manager
@@ -204,7 +204,8 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
           withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
           do case bf_unpackTarget bf of
                Nothing ->
-                   logDebug' "No UNPACK directive. Won't copy any context!"
+                   logDebug' ("No UNPACK directive. Won't copy any context! Dockerfile: " ++
+                              show bf)
                Just _ ->
                    do logDebug' "Compressing context..."
                       compressContext tempDir
@@ -248,6 +249,16 @@ cookBuild cfg@(CookConfig{..}) mStreamHook =
       isBoring boring fp =
           any (isJust . flip matchRegex (FP.encodeString fp)) boring
 
+cookParse :: FilePath -> IO ()
+cookParse fp =
+    do mRes <- parseBuildFile dummyCookConfig fp
+       case mRes of
+         Left errMsg ->
+             fail ("Failed to parse cook file " ++ show fp ++ ": " ++ errMsg)
+         Right ep ->
+             do putStrLn $ ("Parsed " ++ show fp ++ ", content: " ++ show ep)
+                return ()
+
 prepareEntryPoint :: CookConfig -> BuildFileId -> IO BuildFile
 prepareEntryPoint cfg (BuildFileId entryPoint) =
     do let buildFileDir = cc_buildFileDir cfg
@@ -257,5 +268,5 @@ prepareEntryPoint cfg (BuildFileId entryPoint) =
          Left errMsg ->
              error ("Failed to parse EntryPoint " ++ show n ++ ": " ++ errMsg)
          Right ep ->
-             do logDebug $ "Parsed " ++ show n ++ " ..."
+             do logDebug $ ("Parsed " ++ show n ++ ", content: " ++ show ep)
                 return ep

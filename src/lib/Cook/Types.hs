@@ -18,6 +18,19 @@ data CookConfig
    , cc_m4 :: Bool                         -- apply m4 preprocessor before interpreting cook files
    } deriving (Show, Eq)
 
+dummyCookConfig :: CookConfig
+dummyCookConfig =
+    CookConfig
+    { cc_stateDir = "STATE_DIR"
+    , cc_dataDir = "DATA_DIR"
+    , cc_buildFileDir = "BUILD_FILE_DIR"
+    , cc_boringFile = Nothing
+    , cc_tagprefix = Nothing
+    , cc_cookFileDropCount = 0
+    , cc_buildEntryPoints = []
+    , cc_m4 = False
+    }
+
 newtype StreamHook =
     StreamHook { unStreamHook :: BS.ByteString -> IO () }
 

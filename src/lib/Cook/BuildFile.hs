@@ -183,10 +183,10 @@ isValidFileNameChar c =
 
 pBuildFile :: Parser [BuildFileLine]
 pBuildFile =
-    many1 lineP
+    many1 lineP <* endOfInput
     where
       finish =
-          (optional pComment) *> ((() <$ many endOfLine) <|> endOfInput)
+          pComment *> ((() <$ many endOfLine) <|> endOfInput)
       lineP =
           (many (pComment <* endOfLine)) *> lineP'
       lineP' =
@@ -220,7 +220,7 @@ eolOrComment x =
 
 pComment :: Parser ()
 pComment =
-    (skipSpace *> char '#' *> skipSpace) *> (skipWhile (not . isEndOfLine))
+    skipSpace <* optional (char '#' *> skipWhile (not . isEndOfLine))
 
 pIncludeLine :: Parser FilePattern
 pIncludeLine =
