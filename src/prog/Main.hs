@@ -6,11 +6,18 @@ import Cook.Clean
 import Options.Applicative
 import System.Log
 import Cook.Util
+import System.Exit
+import System.Process
 
 runProg :: (Int, CookCmd) -> IO ()
 runProg (verb, cmd) =
     do initLoggingFramework logLevel
-       runProg' cmd
+       ec <- system "command -v docker >/dev/null 2>&1"
+       case ec of
+         ExitSuccess ->
+             runProg' cmd
+         ExitFailure _ ->
+             error "dockercook requires docker. Install from http://docker.com"
     where
       logLevel =
           case verb of
