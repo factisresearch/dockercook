@@ -45,13 +45,20 @@ cookTagP =
     help "Additionally tag docker images with this prefix"
 
 cookDataP =
-    strOption ( long "data" <> short 'd' <> metavar "DIRECTORY" <> help "Directory where to find source files")
+    strOption $
+    long "data" <>
+    short 'd' <>
+    metavar "DIRECTORY" <>
+    value "." <>
+    help "Directory where to find source files"
 
 cookBuildP =
-    strOption ( long "buildfiles" <> short 'b' <> metavar "DIRECTORY" <> help "Directory of dockercook files")
-
-cookEntryPointP =
-    some $ strOption ( long "entrypoint" <> short 'p' <> metavar "ENTRYPOINT" <> help "dockercook targets")
+    strOption $
+    long "buildfiles" <>
+    short 'b' <>
+    metavar "DIRECTORY" <>
+    value "." <>
+    help "Directory of dockercook files"
 
 cookFileDropP :: Parser Int
 cookFileDropP =
@@ -93,8 +100,8 @@ cookOptions =
                 <*> cookBoringP
                 <*> cookTagP
                 <*> cookFileDropP
-                <*> cookEntryPointP
-                <*> cookM4P)
+                <*> cookM4P
+                <*> some (argument str (metavar "COOKFILE...")))
 
 cookClean :: Parser CookCmd
 cookClean =
