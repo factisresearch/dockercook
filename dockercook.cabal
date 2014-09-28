@@ -17,7 +17,7 @@ data-files:          test1.cook
 
 library
   hs-source-dirs:      src/lib
-  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types, Cook.Util
+  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types, Cook.Util, Cook.Uploader
   other-modules:       Cook.State.Manager, Cook.State.Model
   build-depends:       base >=4.6 && <4.8,
                        attoparsec >=0.11 && <0.13,

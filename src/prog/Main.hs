@@ -3,6 +3,7 @@ module Main where
 import Cook.ArgParse
 import Cook.Build
 import Cook.Clean
+import Cook.Uploader
 import Options.Applicative
 import System.Log
 import Cook.Util
@@ -31,7 +32,8 @@ runProg' :: CookCmd -> IO ()
 runProg' cmd =
     case cmd of
       CookBuild buildCfg ->
-          do _ <- cookBuild buildCfg Nothing
+          do uploader <- mkUploader 100
+             _ <- cookBuild buildCfg uploader Nothing
              return ()
       CookClean stateDir daysToKeep dryRun ->
           cookClean stateDir daysToKeep dryRun

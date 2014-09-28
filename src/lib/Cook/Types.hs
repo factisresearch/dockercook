@@ -15,6 +15,7 @@ data CookConfig
    , cc_tagprefix :: Maybe String          -- additionally tag images using this prefix + cook filename
    , cc_cookFileDropCount :: Int           -- drop this many chars from every cook filename
    , cc_m4 :: Bool                         -- apply m4 preprocessor before interpreting cook files
+   , cc_autoPush :: Bool
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 
@@ -29,6 +30,7 @@ dummyCookConfig =
     , cc_cookFileDropCount = 0
     , cc_buildEntryPoints = []
     , cc_m4 = False
+    , cc_autoPush = False
     }
 
 newtype StreamHook =

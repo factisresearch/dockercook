@@ -9,6 +9,7 @@ import Cook.BuildFile
 import Cook.State.Manager
 import Cook.Types
 import Cook.Util
+import Cook.Uploader
 
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -77,14 +78,16 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, hash)
 
-buildImage :: Maybe StreamHook -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)] -> BuildFile -> IO DockerImage
-buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
+buildImage :: Maybe StreamHook
+           -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)]
+           -> Uploader -> BuildFile -> IO DockerImage
+buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf =
     do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cfg parentBuildFile
-                    buildImage mStreamHook cfg stateManager fileHashes parent
+                    buildImage mStreamHook cfg stateManager fileHashes uploader parent
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
@@ -153,6 +156,10 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                markImage
                announceBegin
                hPutStrLn stderr ("built " ++ nameTagArrow)
+               when (cc_autoPush) $
+                    do hPutStrLn stderr ("enqueuing " ++ imageTag
+                                         ++ " for upload to registry")
+                       enqueueImage uploader imageName
                return x
     where
       name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
@@ -236,15 +243,15 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) fileHashes
 
 
-cookBuild :: CookConfig -> Maybe StreamHook -> IO [DockerImage]
-cookBuild cfg@(CookConfig{..}) mStreamHook =
+cookBuild :: CookConfig -> Uploader -> Maybe StreamHook -> IO [DockerImage]
+cookBuild cfg@(CookConfig{..}) uploader mStreamHook =
     do createDirectoryIfMissing True cc_stateDir
        (stateManager, hashManager) <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
-       res <- mapM (buildImage mStreamHook cfg stateManager fileHashes) roots
+       res <- mapM (buildImage mStreamHook cfg stateManager fileHashes uploader) roots
        logInfo "All done!"
        return res
     where

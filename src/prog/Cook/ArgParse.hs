@@ -101,6 +101,7 @@ cookOptions =
                 <*> cookTagP
                 <*> cookFileDropP
                 <*> cookM4P
+                <*> (switch (long "push" <> help "Push built docker containers"))
                 <*> some (argument str (metavar "COOKFILE...")))
 
 cookClean :: Parser CookCmd
