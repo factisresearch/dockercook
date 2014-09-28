@@ -222,6 +222,8 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
              if ecDocker == ExitSuccess
                then return imageName
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
+                       hPutStrLn stderr ("Failing Cookfile: "
+                                         ++ T.unpack (unBuildFileId (bf_name bf)))
                        hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
                        _ <- systemStream Nothing ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
                        exitWith ecDocker
