@@ -100,9 +100,10 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
 
        let contextAdd =
-               case bf_unpackTarget bf of
-                 Nothing -> ""
-                 Just target ->
+               case (bf_unpackTarget bf, null targetedFiles) of
+                 (_, True) -> ""
+                 (Nothing, _) -> ""
+                 (Just target, _) ->
                      BSC.concat
                      [ "COPY context.tar.gz /context.tar.gz\n"
                      , "RUN mkdir -p ", BSC.pack target, "\n"
@@ -192,10 +193,14 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes bf =
                  tarCmd = "/usr/bin/tar"
                  tarArgs = ["cjf", contextPkg, "-C", cc_dataDir] ++
                            (map (FP.encodeString . localName . fst) targetedFiles)
-             unless (null targetedFiles) $
-                    do ecTar <- rawSystem tarCmd tarArgs
-                       unless (ecTar == ExitSuccess) $
-                              fail ("Error creating tar of context:\n" ++ tarCmd)
+             case (null targetedFiles) of
+               False ->
+                   do ecTar <- rawSystem tarCmd tarArgs
+                      unless (ecTar == ExitSuccess) $
+                             fail ("Error creating tar of context:\n" ++ tarCmd)
+               True ->
+                   logWarn ("You've provided an UNPACK directive, but no files "
+                            ++ "match any of your INCLUDE directives...")
 
       launchImageBuilder dockerBS imageName =
           withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
