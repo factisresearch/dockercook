@@ -249,6 +249,8 @@ cookBuild cfg@(CookConfig{..}) uploader mStreamHook =
        (stateManager, hashManager) <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
+       putStrLn "Waiting for hashes to be stored on disk..."
+       hm_waitForWrites hashManager
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
        res <- mapM (buildImage mStreamHook cfg stateManager fileHashes uploader) roots

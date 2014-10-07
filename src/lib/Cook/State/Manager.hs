@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 module Cook.State.Manager
-    ( StateManager, HashManager
+    ( StateManager, HashManager(..)
     , createStateManager, markUsingImage
     , isImageKnown, fastFileHash
     , garbageCollectImages
@@ -58,6 +58,7 @@ data StateManager
 data HashManager
    = HashManager
    { hm_lookup :: forall m. MonadIO m => FilePath -> m SHA1 -> m SHA1
+   , hm_waitForWrites :: IO ()
    }
 
 fastFileHash :: forall m. MonadIO m => HashManager -> FilePath -> m SHA1 -> m SHA1
@@ -118,10 +119,12 @@ createStateManager stateDirectory =
                      ) HM.empty allHashes
        hashMapV <- newTVarIO hashMap
        hashWriteChan <- newTBQueueIO 1000
-       _ <- forkIO (hashManagerPersistWorker stateMgr hashWriteChan)
+       workV <- newTVarIO False
+       _ <- forkIO (hashManagerPersistWorker stateMgr workV hashWriteChan)
        let hashMgr =
                HashManager
                { hm_lookup = hashManagerLookup stateMgr hashMapV hashWriteChan
+               , hm_waitForWrites = waitForHashes workV hashWriteChan
                }
        return (stateMgr, hashMgr)
     where
@@ -132,16 +135,28 @@ createStateManager stateDirectory =
              g <- atomically $ readTVar gVar
              BS.writeFile graphFile $ runPut (safePut $ GP.persistGraph nm g)
 
-hashManagerPersistWorker :: StateManager -> TBQueue DbHashCache -> IO ()
-hashManagerPersistWorker (StateManager{..}) hashWriteChan =
+waitForHashes :: TVar Bool -> TBQueue DbHashCache -> IO ()
+waitForHashes workEnqueuedVar hashWriteChan =
+    atomically $
+    do queueEmpty <- isEmptyTBQueue hashWriteChan
+       workEnqueued <- readTVar workEnqueuedVar
+       when ((not queueEmpty) || workEnqueued) retry
+
+hashManagerPersistWorker :: StateManager -> TVar Bool -> TBQueue DbHashCache -> IO ()
+hashManagerPersistWorker (StateManager{..}) workEnqueuedVar hashWriteChan =
     do batchV <- newTVarIO V.empty
        _ <- forkIO (batchBuilder batchV)
        loop batchV
     where
+      batchBuilder :: TVar (V.Vector DbHashCache) -> IO ()
       batchBuilder batchV =
-          do writeOp <- atomically $ readTBQueue hashWriteChan
+          do writeOp <-
+                 atomically $
+                   do writeTVar workEnqueuedVar True
+                      readTBQueue hashWriteChan
              atomically $ modifyTVar' batchV (\v -> V.snoc v writeOp)
              batchBuilder batchV
+      loop :: TVar (V.Vector DbHashCache) -> IO ()
       loop batchV =
           do logDebug $ "Waiting for next hash batch to arrive"
              writeBatch <-
@@ -158,10 +173,13 @@ hashManagerPersistWorker (StateManager{..}) hashWriteChan =
                              logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
                              return ()
              logDebug $ "Storing " ++ (show $ V.length writeBatch) ++ " hashes in database."
+             atomically $ writeTVar workEnqueuedVar False
              sqlAction `catch` \(e :: SomeException) ->
                  do logError $ "Hash persist error: " ++ show e
-                    atomically $ modifyTVar' batchV (\newV -> V.concat [writeBatch, newV])
-             threadDelay 2000000 -- 2 sec
+                    atomically $
+                        do modifyTVar' batchV (\newV -> V.concat [writeBatch, newV])
+                           writeTVar workEnqueuedVar True
+             threadDelay 1000000 -- 1 sec
              loop batchV
 
 hashManagerLookup :: MonadIO m
