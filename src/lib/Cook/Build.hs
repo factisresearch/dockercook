@@ -197,8 +197,8 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf 
 
       compressContext tempDir =
           do let contextPkg = tempDir </> "context.tar.gz"
-                 tarCmd = "/usr/bin/tar"
-                 tarArgs = ["cjf", contextPkg, "-C", cc_dataDir] ++
+                 tarCmd = "/usr/bin/env"
+                 tarArgs = ["tar", "cjf", contextPkg, "-C", cc_dataDir] ++
                            (map (FP.encodeString . localName . fst) targetedFiles)
              case (null targetedFiles) of
                False ->
