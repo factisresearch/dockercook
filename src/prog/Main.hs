@@ -56,4 +56,9 @@ runProg' cmd =
 
 main :: IO ()
 main =
-    execParser (info argParse idm) >>= runProg
+    execParser opts >>= runProg
+    where
+      opts = info (helper <*> argParse)
+             ( fullDesc
+             <> progDesc "Speed up docker image building"
+             )
