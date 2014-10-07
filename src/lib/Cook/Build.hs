@@ -28,7 +28,6 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Conduit.Combinators as C
-import qualified Data.Foldable as F
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
@@ -131,11 +130,12 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf 
        logDebug' $ "Image name will be " ++ imageTag
        let mUserTagName =
                fmap (\prefix -> prefix ++ drop cc_cookFileDropCount name) cc_tagprefix
+           markImage :: IO (Maybe DockerImage)
            markImage =
                do markUsingImage stateManager imageName (Just baseImage)
-                  F.forM_ mUserTagName $ \userTag ->
+                  T.forM mUserTagName $ \userTag ->
                       do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ userTag) streamHook
-                         return ()
+                         return (DockerImage $ T.pack userTag)
            announceBegin =
                hPutStr stderr (name ++ "... \t\t")
            tagInfo =
@@ -145,22 +145,28 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf 
 
        announceBegin
        imageExists <- dockerImageExists imageName
-       if imageExists
-       then do hPutStrLn stderr ("found " ++ nameTagArrow)
-               logDebug' "The image already exists!"
-               markImage
-               return imageName
-       else do hPutStrLn stderr ("building " ++ imageTag)
-               logDebug' "Image not found!"
-               x <- launchImageBuilder dockerBS imageName
-               markImage
-               announceBegin
-               hPutStrLn stderr ("built " ++ nameTagArrow)
-               when (cc_autoPush) $
-                    do hPutStrLn stderr ("enqueuing " ++ imageTag
-                                         ++ " for upload to registry")
-                       enqueueImage uploader imageName
-               return x
+       (mNewTag, newImage) <-
+           if imageExists
+           then do hPutStrLn stderr ("found " ++ nameTagArrow)
+                   logDebug' "The image already exists!"
+                   mTag <- markImage
+                   return (mTag, imageName)
+           else do hPutStrLn stderr ("building " ++ imageTag)
+                   logDebug' "Image not found!"
+                   x <- launchImageBuilder dockerBS imageName
+                   mTag <- markImage
+                   announceBegin
+                   hPutStrLn stderr ("built " ++ nameTagArrow)
+                   return (mTag, x)
+       when (cc_autoPush) $
+            case mNewTag of
+              Nothing ->
+                  logError ("Autopush is enabled, but no tag provided!")
+              Just newTag ->
+                  do logInfo ("enqueuing " ++ (T.unpack $ unDockerImage newTag)
+                                           ++ " for upload to registry")
+                     enqueueImage uploader newTag
+       return newImage
     where
       name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
       logDebug' m =
@@ -249,12 +255,12 @@ cookBuild cfg@(CookConfig{..}) uploader mStreamHook =
        (stateManager, hashManager) <- createStateManager cc_stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
-       putStrLn "Waiting for hashes to be stored on disk..."
+       logDebug "Waiting for hashes to be stored on disk..."
        hm_waitForWrites hashManager
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
        res <- mapM (buildImage mStreamHook cfg stateManager fileHashes uploader) roots
-       logInfo "All done!"
+       logInfo "Finished building all required images!"
        return res
     where
       parseBoring =

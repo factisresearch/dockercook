@@ -38,15 +38,11 @@ runProg' cmd =
           do uploader <- mkUploader 100
              _ <- cookBuild buildCfg uploader Nothing
              when (cc_autoPush buildCfg) $
-               do missingImages <- killUploader uploader
-                  putStrLn $ "Waiting for " ++ (show $ length missingImages)
-                               ++ " to finish beeing pushed"
-                  uploadSt <- uploadImages missingImages
-                  case uploadSt of
-                    Left err ->
-                        putStrLn $ "Failed to push all images! " ++ err
-                    Right _ ->
-                        putStrLn "All images pushed."
+               do logInfo $ "Waiting for all images to finish beeing pushed"
+                  waitForCompletion uploader
+                  missingImages <- killUploader uploader
+                  unless (null missingImages) $
+                      logError "Uploader confirmed completion but still had images in the pipeline!"
              return ()
       CookClean stateDir daysToKeep dryRun ->
           cookClean stateDir daysToKeep dryRun

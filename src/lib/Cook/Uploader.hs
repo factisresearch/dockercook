@@ -4,7 +4,7 @@ module Cook.Uploader
     , mkUploader
     , killUploader
     , enqueueImage
-    , uploadImages
+    , waitForCompletion
     )
 where
 
@@ -14,6 +14,7 @@ import Cook.Util
 import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
+import Control.Monad
 import Data.Maybe
 import System.Process
 import System.Exit
@@ -54,26 +55,29 @@ killUploader (Uploader tid queue taskV) =
                Nothing ->
                    return []
 
-uploadImages :: [DockerImage] -> IO (Either String ())
-uploadImages [] = return (Right ())
-uploadImages (im:xs) =
-    do uploadStatus <- uploadImage im
-       case uploadStatus of
-         Left err -> return (Left err)
-         Right _ ->
-             uploadImages xs
-
+waitForCompletion :: Uploader -> IO ()
+waitForCompletion (Uploader _ q v) =
+    atomically $
+    do isEmpty <- isEmptyTBQueue q
+       mTask <- readTVar v
+       when ((not isEmpty) || (isJust mTask)) $ retry
 
 uploadImage :: DockerImage -> IO (Either String ())
 uploadImage (DockerImage imName') =
     do let imName = T.unpack imName'
-       (ec, _, _) <-
+       logInfo ("Pushing " ++ imName ++ " to the registry")
+       (ec, stdOut, stdErr) <-
            readProcessWithExitCode "docker"
                                        ["push"
                                        , imName] ""
        if ec == ExitSuccess
        then return $ Right ()
-       else return $ Left ("Failed to upload " ++ imName)
+       else return $ Left ("Failed to upload " ++ imName
+                           ++ "\n"
+                           ++ stdOut
+                           ++ "\n"
+                           ++ stdErr
+                          )
 
 uploader :: TBQueue DockerImage -> TVar (Maybe DockerImage) -> IO ()
 uploader q v =
