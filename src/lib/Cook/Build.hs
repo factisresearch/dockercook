@@ -110,7 +110,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf 
                      BSC.concat
                      [ "COPY context.tar.gz /context.tar.gz\n"
                      , "RUN mkdir -p ", BSC.pack target, "\n"
-                     , "RUN tar xvk --skip-old-files -f /context.tar.gz -C ", BSC.pack target, "\n"
+                     , "RUN /usr/bin/env tar xvk --skip-old-files -f /context.tar.gz -C ", BSC.pack target, "\n"
                      , "RUN rm -rf /context.tar.gz\n"
                      ]
            dockerBS =
