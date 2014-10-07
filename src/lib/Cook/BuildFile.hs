@@ -11,6 +11,7 @@ module Cook.BuildFile
 where
 
 import Cook.Types
+import Cook.Util
 
 import Control.Applicative
 import Data.Attoparsec.Text hiding (take)
@@ -127,6 +128,7 @@ constructBuildFile cookDir fp theLines =
                       do let bashCmd = (cookDir </> scriptLoc) ++ " " ++ T.unpack (fromMaybe "" mArgs)
                          (ec, stdOut, stdErr) <-
                                 readProcessWithExitCode "bash" ["-c", bashCmd] ""
+                         logDebug ("SCRIPT " ++ bashCmd ++ " returned: \n" ++ stdOut ++ "\n" ++ stdErr)
                          if ec == ExitSuccess
                          then case parseOnly pBuildFile (T.pack stdOut) of
                                 Left parseError ->

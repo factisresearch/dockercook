@@ -3,11 +3,14 @@ module Main where
 import Cook.ArgParse
 import Cook.Build
 import Cook.Clean
+import Cook.Types
 import Cook.Uploader
-import Options.Applicative
-import System.Log
 import Cook.Util
+
+import Control.Monad
+import Options.Applicative
 import System.Exit
+import System.Log
 import System.Process
 
 runProg :: (Int, CookCmd) -> IO ()
@@ -34,6 +37,16 @@ runProg' cmd =
       CookBuild buildCfg ->
           do uploader <- mkUploader 100
              _ <- cookBuild buildCfg uploader Nothing
+             when (cc_autoPush buildCfg) $
+               do missingImages <- killUploader uploader
+                  putStrLn $ "Waiting for " ++ (show $ length missingImages)
+                               ++ " to finish beeing pushed"
+                  uploadSt <- uploadImages missingImages
+                  case uploadSt of
+                    Left err ->
+                        putStrLn $ "Failed to push all images! " ++ err
+                    Right _ ->
+                        putStrLn "All images pushed."
              return ()
       CookClean stateDir daysToKeep dryRun ->
           cookClean stateDir daysToKeep dryRun

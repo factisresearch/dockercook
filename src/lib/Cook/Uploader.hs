@@ -4,6 +4,7 @@ module Cook.Uploader
     , mkUploader
     , killUploader
     , enqueueImage
+    , uploadImages
     )
 where
 
@@ -53,6 +54,27 @@ killUploader (Uploader tid queue taskV) =
                Nothing ->
                    return []
 
+uploadImages :: [DockerImage] -> IO (Either String ())
+uploadImages [] = return (Right ())
+uploadImages (im:xs) =
+    do uploadStatus <- uploadImage im
+       case uploadStatus of
+         Left err -> return (Left err)
+         Right _ ->
+             uploadImages xs
+
+
+uploadImage :: DockerImage -> IO (Either String ())
+uploadImage (DockerImage imName') =
+    do let imName = T.unpack imName'
+       (ec, _, _) <-
+           readProcessWithExitCode "docker"
+                                       ["push"
+                                       , imName] ""
+       if ec == ExitSuccess
+       then return $ Right ()
+       else return $ Left ("Failed to upload " ++ imName)
+
 uploader :: TBQueue DockerImage -> TVar (Maybe DockerImage) -> IO ()
 uploader q v =
     do nextImage <-
@@ -60,14 +82,10 @@ uploader q v =
            do t <- readTBQueue q
               writeTVar v (Just t)
               return t
-       let imName = T.unpack $ unDockerImage nextImage
-       (ec, _, _) <-
-           readProcessWithExitCode "docker"
-                                       ["push"
-                                       , imName] ""
+       uploadStatus <- uploadImage nextImage
        atomically $ writeTVar v Nothing
-       if ec == ExitSuccess
-       then do atomically $ writeTVar v Nothing
-               uploader q v
-       else logWarn ("Failed to upload " ++ imName ++ "."
-                     ++ " Uploader quit.")
+       case uploadStatus of
+         Left err -> logWarn (err ++ "\n Uploader quit.")
+         Right _ ->
+             do atomically $ writeTVar v Nothing
+                uploader q v
