@@ -9,8 +9,9 @@ import System.IO.Unsafe (unsafePerformIO)
 data CookCmd
    = CookBuild CookConfig
    | CookClean FilePath Int Bool
-   | CookList
    | CookParse FilePath
+   | CookSync FilePath
+   | CookVersion
    deriving (Show, Eq)
 
 home :: FilePath
@@ -60,6 +61,14 @@ cookBuildP =
     value "." <>
     help "Directory of dockercook files"
 
+
+cookEntryPointP_deprecated =
+    strOption $
+    long "entrypoint" <>
+    short 'p' <>
+    metavar "COOKFILE" <>
+    help "Cookfile to be built"
+
 cookFileDropP :: Parser Int
 cookFileDropP =
     option $
@@ -102,19 +111,20 @@ cookOptions =
                 <*> cookFileDropP
                 <*> cookM4P
                 <*> (switch (long "push" <> help "Push built docker containers"))
-                <*> some (argument str (metavar "COOKFILE...")))
+                <*> ((++) <$> many cookEntryPointP_deprecated
+                          <*> many (argument str (metavar "COOKFILE"))))
 
 cookClean :: Parser CookCmd
 cookClean =
     CookClean <$> cookStateP <*> cookKeepDaysP <*> dryRunP
 
+cookSync :: Parser CookCmd
+cookSync =
+    CookSync <$> cookStateP
+
 cookParse :: Parser CookCmd
 cookParse =
     CookParse <$> cookFileP
-
-cookHelp :: Parser CookCmd
-cookHelp =
-    pure CookList
 
 argParse :: Parser (Int, CookCmd)
 argParse =
@@ -126,5 +136,6 @@ argParse' =
     (  command "cook" (info cookOptions ( progDesc "Cook docker images" ))
     <> command "clean" (info cookClean ( progDesc "Cleanup docker images that are no longer needed" ))
     <> command "parse" (info cookParse ( progDesc "Parse the given file" ))
-    <> command "help" (info cookHelp ( progDesc "List cook commands" ))
+    <> command "sync" (info cookSync ( progDesc "Sync local state with remote docker server" ))
+    <> command "version" (info (pure CookVersion) ( progDesc "Show programs version" ))
     )

@@ -1,5 +1,5 @@
 name:                dockercook
-version:             0.2.1.0
+version:             0.3.0.0
 synopsis:            A build tool for multiple docker image layers
 description:         Build and manage multiple docker image layers to speed up deployment
 license:             MIT
@@ -17,8 +17,8 @@ data-files:          test1.cook
 
 library
   hs-source-dirs:      src/lib
-  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types, Cook.Util, Cook.Uploader
-  other-modules:       Cook.State.Manager, Cook.State.Model
+  exposed-modules:     Cook.Build, Cook.BuildFile, Cook.Clean, Cook.Types, Cook.Util, Cook.Uploader, Cook.Sync
+  other-modules:       Cook.State.Manager, Cook.State.Model, Cook.Docker
   build-depends:       base >=4.6 && <4.8,
                        attoparsec >=0.11 && <0.13,
                        base16-bytestring >=0.1 && <0.2,

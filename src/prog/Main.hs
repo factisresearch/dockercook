@@ -1,8 +1,12 @@
 module Main where
 
+import Paths_dockercook (version)
+import Data.Version (showVersion)
+
 import Cook.ArgParse
 import Cook.Build
 import Cook.Clean
+import Cook.Sync
 import Cook.Types
 import Cook.Uploader
 import Cook.Util
@@ -46,13 +50,12 @@ runProg' cmd =
              return ()
       CookClean stateDir daysToKeep dryRun ->
           cookClean stateDir daysToKeep dryRun
-      CookList ->
-          do putStrLn "Available commands:"
-             putStrLn "- cook"
-             putStrLn "- clean"
-             putStrLn "- parse"
+      CookSync stateDir ->
+          runSync stateDir
       CookParse file ->
           cookParse file
+      CookVersion ->
+          putStrLn ("dockercook " ++ showVersion version)
 
 main :: IO ()
 main =

@@ -9,6 +9,7 @@ module Cook.State.Manager
     , isImageKnown, fastFileHash
     , garbageCollectImages
     , mkTempStateManager
+    , syncImages
     )
 where
 
@@ -319,6 +320,22 @@ garbageCollectImages (StateManager{..}) deletePred deleteFun =
                             Just info ->
                                 return info
                       markAs $ deletePred dbInfo
+
+syncImages :: StateManager -> (DockerImage -> IO Bool) -> IO ()
+syncImages (StateManager{..}) imageStillExists =
+    do x <- sm_runSql $ selectList [] []
+       forM_ x $ \entity ->
+           do let dockerImage = entityVal entity
+                  name = dbDockerImageName dockerImage
+                  nodeId = dbDockerImageNodeId dockerImage
+              exists <- imageStillExists (DockerImage name)
+              unless exists $
+                 do logInfo ("The image " ++ T.unpack name
+                             ++ " doesn't exist on remote docker server. Removing it from local state.")
+                    sm_runSql $ delete (entityKey entity)
+                    atomically $
+                      do modifyTVar' sm_graph (G.removeNode nodeId)
+                         modifyTVar' sm_nodeManager (NM.removeNodeHandle nodeId)
 
 isImageKnown :: StateManager -> DockerImage -> IO Bool
 isImageKnown (StateManager{..}) (DockerImage imageName) =

@@ -10,6 +10,7 @@ import Cook.State.Manager
 import Cook.Types
 import Cook.Util
 import Cook.Uploader
+import qualified Cook.Docker as D
 
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
@@ -77,16 +78,17 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, hash)
 
-buildImage :: Maybe StreamHook
+buildImage :: D.DockerImagesCache
+           -> Maybe StreamHook
            -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)]
            -> Uploader -> BuildFile -> IO DockerImage
-buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf =
+buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf =
     do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cfg parentBuildFile
-                    buildImage mStreamHook cfg stateManager fileHashes uploader parent
+                    buildImage imCache mStreamHook cfg stateManager fileHashes uploader parent
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
@@ -186,21 +188,7 @@ buildImage mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf 
              if known
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      return True
-             else do (ec, stdOut, _) <- readProcessWithExitCode "docker" ["images"] ""
-                     let imageLines = T.lines $ T.pack stdOut
-                     return $ ec == ExitSuccess && checkLines imageName imageLines
-          where
-            checkLines _ [] = False
-            checkLines im (line:xs) =
-                let (imageBaseName, vers) = T.break (==':') im
-                in if T.isPrefixOf imageBaseName line
-                   then if vers == ""
-                        then True
-                        else if T.isInfixOf (T.drop 1 vers) line
-                             then True
-                             else checkLines im xs
-                   else checkLines im xs
-
+             else D.doesImageExist imCache localIm
       compressContext tempDir =
           do let contextPkg = tempDir </> "context.tar.gz"
                  tarCmd = "/usr/bin/env"
@@ -259,7 +247,8 @@ cookBuild cfg@(CookConfig{..}) uploader mStreamHook =
        hm_waitForWrites hashManager
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
-       res <- mapM (buildImage mStreamHook cfg stateManager fileHashes uploader) roots
+       imCache <- D.newDockerImagesCache
+       res <- mapM (buildImage imCache mStreamHook cfg stateManager fileHashes uploader) roots
        logInfo "Finished building all required images!"
        return res
     where
