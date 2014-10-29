@@ -43,3 +43,7 @@ newtype SHA1 =
 newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable, SafeCopy)
+
+newtype DockerImageId
+    = DockerImageId { unDockerImageId :: T.Text }
+    deriving (Show, Eq, Hashable, SafeCopy)

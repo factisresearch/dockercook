@@ -15,6 +15,6 @@ runSync stateDir =
        then do logInfo "Sync started, please wait..."
                (stateManager, _) <- createStateManager stateDir
                imCache <- D.newDockerImagesCache
-               syncImages stateManager (D.doesImageExist imCache)
+               syncImages stateManager (\v -> D.doesImageExist imCache (Left v))
                logInfo "Sync complete."
        else logError "Docker daemon not reachable!"

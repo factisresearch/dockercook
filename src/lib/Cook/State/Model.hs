@@ -16,6 +16,7 @@ import qualified Data.ByteString as BS
 share [mkPersist sqlSettings, mkMigrate "migrateState"] [persistLowerCase|
 DbDockerImage
     name T.Text
+    rawImageId T.Text Maybe
     creationDate UTCTime
     lastUsed UTCTime
     usageCount Int

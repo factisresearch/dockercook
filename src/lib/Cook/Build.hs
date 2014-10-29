@@ -159,6 +159,9 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                    mTag <- markImage
                    announceBegin
                    hPutStrLn stderr ("built " ++ nameTagArrow)
+                   imageId <- D.getImageId imageName
+                   logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
+                   setImageId stateManager imageName imageId
                    return (mTag, x)
        when (cc_autoPush) $
             case mNewTag of
@@ -185,10 +188,27 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
       dockerImageExists localIm@(DockerImage imageName) =
           do logDebug' $ "Checking if the image " ++ show imageName ++ " is already present... "
              known <- isImageKnown stateManager localIm
+             mRawImageId <- getImageId stateManager localIm
+             let storeRawId =
+                     unless (isJust mRawImageId) $
+                        do imageId <- D.getImageId localIm
+                           logDebug' $ "The raw id of " ++ (T.unpack imageName) ++ " is " ++ show imageId
+                           setImageId stateManager localIm imageId
              if known
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
+                     storeRawId
                      return True
-             else D.doesImageExist imCache localIm
+             else do taggedExists <- D.doesImageExist imCache (Left localIm)
+                     case (taggedExists, mRawImageId) of
+                       (True, _) ->
+                           do storeRawId
+                              return True
+                       (False, Just rawId) ->
+                           do rawExists <- D.doesImageExist imCache (Right rawId)
+                              when rawExists $
+                                   D.tagImage rawId localIm
+                              return rawExists
+                       (False, Nothing) -> return False
       compressContext tempDir =
           do let contextPkg = tempDir </> "context.tar.gz"
                  tarCmd = "/usr/bin/env"

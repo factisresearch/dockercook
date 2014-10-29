@@ -10,6 +10,7 @@ module Cook.State.Manager
     , garbageCollectImages
     , mkTempStateManager
     , syncImages
+    , getImageId, setImageId
     )
 where
 
@@ -342,6 +343,18 @@ isImageKnown (StateManager{..}) (DockerImage imageName) =
     do x <- sm_runSql $ getBy (UniqueDbDockerImage imageName)
        return (isJust x)
 
+getImageId :: StateManager -> DockerImage -> IO (Maybe DockerImageId)
+getImageId (StateManager{..}) (DockerImage imageName) =
+    do x <- sm_runSql $ getBy (UniqueDbDockerImage imageName)
+       case x of
+         Nothing -> return Nothing
+         Just entity ->
+             return $ fmap DockerImageId (dbDockerImageRawImageId $ entityVal entity)
+
+setImageId :: StateManager -> DockerImage -> DockerImageId -> IO ()
+setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId) =
+    sm_runSql $ updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId) ]
+
 markUsingImage :: StateManager -> DockerImage -> Maybe DockerImage -> IO ()
 markUsingImage (StateManager{..}) img@(DockerImage imageName) mParentImage =
     do parentEntity <-
@@ -363,7 +376,7 @@ markUsingImage (StateManager{..}) img@(DockerImage imageName) mParentImage =
                              Just pe ->
                                  G.addEdge nodeId (dbDockerImageNodeId $ entityVal pe) g
                        return nodeId
-                _ <- sm_runSql $ insert $ DbDockerImage imageName now now 1 newNodeId
+                _ <- sm_runSql $ insert $ DbDockerImage imageName Nothing now now 1 newNodeId
                 sm_persistGraph
                 return ()
          Just imageEntity ->

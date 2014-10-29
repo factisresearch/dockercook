@@ -1,7 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DoAndIfThenElse #-}
 module Cook.Docker
     ( DockerImagesCache, newDockerImagesCache
     , dockerReachable, doesImageExist
+    , getImageId, tagImage
     )
 where
 
@@ -17,6 +19,20 @@ import qualified Data.Text as T
 newtype DockerImagesCache
     = DockerImagesCache { _unDockerImagesCache :: TVar (Maybe T.Text) }
 
+getImageId :: DockerImage -> IO DockerImageId
+getImageId (DockerImage imageName) =
+    do (ec, stdOut, _) <- readProcessWithExitCode "docker" ["inspect", "-f", "{{.Id}}", T.unpack imageName] ""
+       if ec /= ExitSuccess
+       then fail $ "Failed to get image id of image " ++ show imageName
+       else return $ DockerImageId $ T.strip $ T.pack stdOut
+
+tagImage :: DockerImageId -> DockerImage -> IO ()
+tagImage (DockerImageId imageId) (DockerImage imageTag) =
+    do (ec, _, _) <- readProcessWithExitCode "docker" ["tag", T.unpack imageId, T.unpack imageTag] ""
+       if ec /= ExitSuccess
+       then fail $ "Failed to tag image " ++ show imageId
+       else return ()
+
 dockerReachable :: IO Bool
 dockerReachable =
     do (ec, _, _) <- readProcessWithExitCode "docker" ["ps"] ""
@@ -26,8 +42,8 @@ newDockerImagesCache :: IO DockerImagesCache
 newDockerImagesCache =
     DockerImagesCache <$> newTVarIO Nothing
 
-doesImageExist :: DockerImagesCache -> DockerImage -> IO Bool
-doesImageExist (DockerImagesCache cacheVar) (DockerImage imageName) =
+doesImageExist :: DockerImagesCache -> Either DockerImage DockerImageId -> IO Bool
+doesImageExist (DockerImagesCache cacheVar) eImage =
     do mOut <- atomically $ readTVar cacheVar
        (ec, imageText) <-
            case mOut of
@@ -43,6 +59,10 @@ doesImageExist (DockerImagesCache cacheVar) (DockerImage imageName) =
        let imageLines = T.lines imageText
        return $ ec == ExitSuccess && checkLines imageName imageLines
     where
+      imageName =
+          case eImage of
+            Left (DockerImage n) -> n
+            Right (DockerImageId n) -> n
       checkLines _ [] = False
       checkLines im (line:xs) =
           let (imageBaseName, vers) = T.break (==':') im
