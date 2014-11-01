@@ -159,9 +159,9 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                    mTag <- markImage
                    announceBegin
                    hPutStrLn stderr ("built " ++ nameTagArrow)
-                   imageId <- D.getImageId imageName
-                   logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
-                   setImageId stateManager imageName imageId
+                   withRawImageId imageName $ \imageId ->
+                     do logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
+                        setImageId stateManager imageName imageId
                    return (mTag, x)
        when (cc_autoPush) $
             case mNewTag of
@@ -173,6 +173,11 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                      enqueueImage uploader newTag
        return newImage
     where
+      withRawImageId imageName action =
+          do mImageId <- D.getImageId imageName
+             case mImageId of
+               Nothing -> logWarn $ "Failed to get the raw image id of " ++ (T.unpack $ unDockerImage $ imageName)
+               Just imageId -> action imageId
       name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
       logDebug' m =
           do logDebug m
@@ -191,8 +196,8 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
              mRawImageId <- getImageId stateManager localIm
              let storeRawId =
                      unless (isJust mRawImageId) $
-                        do imageId <- D.getImageId localIm
-                           logDebug' $ "The raw id of " ++ (T.unpack imageName) ++ " is " ++ show imageId
+                     withRawImageId localIm $ \imageId ->
+                        do logDebug' $ "The raw id of " ++ (T.unpack imageName) ++ " is " ++ show imageId
                            setImageId stateManager localIm imageId
              if known
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"

@@ -32,7 +32,7 @@ library
                        conduit-extra >=1.1 && <1.2,
                        resourcet >=1.1 && <1.2,
                        regex-compat >=0.95 && <0.96,
-                       process >=1.1 && <1.2,
+                       process >=1.1 && <1.3,
                        system-filepath >=0.4 && <0.5,
                        temporary >=1.2 && <1.3,
                        text >=1.1 && <1.2,
@@ -49,19 +49,19 @@ library
                        stm >=2.4 && <2.5,
                        hashable >=1.2 && <1.3,
                        vector >=0.10 && <0.11,
-                       unix >=2.5 && <2.7,
+                       unix >=2.5 && <2.8,
                        unordered-containers >=0.2 && <0.3
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 
 executable dockercook
   main-is:             Main.hs
   other-modules:       Cook.ArgParse
-  build-depends:       base ==4.6.*,
+  build-depends:       base >=4.6 && <4.8,
                        dockercook,
                        filepath >= 1.3 && <1.4,
                        hslogger >=1.2 && <1.3,
                        optparse-applicative >=0.8 && <0.9,
-                       process >=1.1 && <1.2
+                       process >=1.1 && <1.3
   hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 

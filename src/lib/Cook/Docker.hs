@@ -19,12 +19,12 @@ import qualified Data.Text as T
 newtype DockerImagesCache
     = DockerImagesCache { _unDockerImagesCache :: TVar (Maybe T.Text) }
 
-getImageId :: DockerImage -> IO DockerImageId
+getImageId :: DockerImage -> IO (Maybe DockerImageId)
 getImageId (DockerImage imageName) =
     do (ec, stdOut, _) <- readProcessWithExitCode "docker" ["inspect", "-f", "{{.Id}}", T.unpack imageName] ""
        if ec /= ExitSuccess
-       then fail $ "Failed to get image id of image " ++ show imageName
-       else return $ DockerImageId $ T.strip $ T.pack stdOut
+       then return Nothing
+       else return $ Just $ DockerImageId $ T.strip $ T.pack stdOut
 
 tagImage :: DockerImageId -> DockerImage -> IO ()
 tagImage (DockerImageId imageId) (DockerImage imageTag) =
