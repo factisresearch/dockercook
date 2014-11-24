@@ -3,6 +3,7 @@
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE RankNTypes #-}
 module Cook.Build (cookBuild, cookParse) where
 
 import Cook.BuildFile
@@ -14,7 +15,7 @@ import qualified Cook.Docker as D
 
 import Control.Monad
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Trans.Resource (runResourceT)
+import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Conduit
 import Data.Maybe (fromMaybe, isJust)
 import System.Exit
@@ -24,6 +25,7 @@ import System.IO.Temp
 import System.Directory
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
+import qualified Data.Streaming.Filesystem as F
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
@@ -46,16 +48,54 @@ fixTailingSlash s =
       ('/':_) -> s
       d -> reverse ('/':d)
 
+sourceDirectoryDeep' :: MonadResource m
+                    => Bool -- ^ Follow directory symlinks
+                    -> (FP.FilePath -> IO Bool) -- ^ Should a directory be expanded
+                    -> FP.FilePath -- ^ Root directory
+                    -> Producer m FP.FilePath
+sourceDirectoryDeep' followSymlinks shouldFollow =
+  start
+  where
+    start :: MonadResource m => FP.FilePath -> Producer m FP.FilePath
+    start dir = C.sourceDirectory dir =$= awaitForever go
+    go :: MonadResource m => FP.FilePath -> Producer m FP.FilePath
+    go fp =
+        do ft <- liftIO $ F.getFileType (FP.encodeString fp)
+           case ft of
+             F.FTFile -> yield fp
+             F.FTFileSym -> yield fp
+             F.FTDirectory ->
+                 do followOk <- liftIO $ shouldFollow fp
+                    if followOk then start fp else return ()
+             F.FTDirectorySym
+                 | followSymlinks ->
+                     do followOk <- liftIO $ shouldFollow fp
+                        if followOk then start fp else return ()
+                 | otherwise -> return ()
+             F.FTOther -> return ()
+
 makeDirectoryFileHashTable :: HashManager -> (FP.FilePath -> Bool) -> FilePath -> IO [(FP.FilePath, SHA1)]
 makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> root) =
     do currentDir <- getCurrentDirectory
        let fullRoot = currentDir </> FP.encodeString root
        logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This will take some time..."
-       x <- runResourceT $! C.sourceDirectoryDeep False root =$= C.concatMapM (hashFile fullRoot) $$ C.sinkList
+       x <- runResourceT $! sourceDirectoryDeep' False dirCheck root =$= C.concatMapM (hashFile fullRoot) $$ C.sinkList
        hPutStr stderr "\n"
        logDebug "Done hashing your repo!"
        return x
     where
+      dirCheck rf =
+          case FP.stripPrefix root rf of
+            Nothing ->
+                let cd = show $ FP.commonPrefix [root, rf]
+                in fail ("Expected " ++ show rf ++ " to start with " ++ show root ++ ". Common dirs:" ++ cd)
+            Just relToRootF ->
+                let shouldIgnore = ignore relToRootF
+                in if shouldIgnore
+                   then do logDebug ("Ignoring " ++ show relToRootF)
+                           return False
+                   else do logDebug ("Traversing " ++ show relToRootF)
+                           return True
       hashFile fullRoot relToCurrentF =
           case FP.stripPrefix root relToCurrentF of
             Nothing ->
@@ -95,13 +135,13 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                     then do markUsingImage stateManager rootImage Nothing
                             return rootImage
                     else do logDebug' $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
-                            (ec, stdOut, _) <-
+                            (ec, stdOut, stdErr) <-
                                 readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
                             then do markUsingImage stateManager rootImage Nothing
                                     return rootImage
                             else error ("Can't find provided base docker image "
-                                        ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut)
+                                        ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
 
        let contextAdd =
                case (bf_unpackTarget bf, null targetedFiles) of

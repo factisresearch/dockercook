@@ -1,5 +1,5 @@
 name:                dockercook
-version:             0.3.1.0
+version:             0.3.2.0
 synopsis:            A build tool for multiple docker image layers
 description:         Build and manage multiple docker image layers to speed up deployment
 license:             MIT
@@ -45,6 +45,7 @@ library
                        monad-logger >=0.3 && <0.4,
                        cereal >=0.4 && <0.5,
                        safecopy >=0.8 && <0.9,
+                       streaming-commons >=0.1 && <0.2,
                        time >=1.4 && <1.5,
                        stm >=2.4 && <2.5,
                        hashable >=1.2 && <1.3,
