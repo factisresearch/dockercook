@@ -20,29 +20,29 @@ import Cook.Types
 
 import Control.Applicative
 import Control.Concurrent
-import Control.Exception
 import Control.Concurrent.STM
+import Control.Exception
 import Control.Monad
 import Control.Monad.Logger hiding (logInfo, logDebug, logError, logWarn)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
+import Control.Retry
 import Data.Maybe
 import Data.SafeCopy (safeGet, safePut)
 import Data.Serialize.Get (runGet)
 import Data.Serialize.Put (runPut)
 import Data.Time.Clock
+import Data.Time.Clock.POSIX
 import Database.Persist.Sqlite
 import System.Directory
 import System.FilePath
-import System.IO.Temp
-import System.Posix.Files
-import Data.Time.Clock.POSIX
 import System.IO
+import System.Posix.Files
 import qualified Data.ByteString as BS
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Graph as G
 import qualified Data.Graph.NodeManager as NM
 import qualified Data.Graph.Persistence as GP
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Traversable as T
 import qualified Data.Vector as V
@@ -81,11 +81,8 @@ mkTempStateManager (StateManager{..}) =
                   { sm_runSql =
                         \action ->
                         let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
-                        in tryTx `catch` \(e :: SomeException) ->
-                             do logWarn $ "Sqlite-Transaction failed. " ++ show e ++ ". Trying again in 5 seconds"
-                                threadDelay (1000000 * 5)
-                                tryTx `catch` \(e2 :: SomeException) ->
-                                    fail $ "Sqlite-Transaction finally failed: " ++ show e2
+                        in (recoverAll (exponentialBackoff 500000 <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
+                              fail $ "Sqlite-Transaction finally failed: " ++ show e
                   , sm_databaseFile = tmpDb
                   , sm_graph = g'
                   , sm_nodeManager = nm'

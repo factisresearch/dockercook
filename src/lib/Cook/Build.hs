@@ -9,8 +9,8 @@ module Cook.Build (cookBuild, cookParse) where
 import Cook.BuildFile
 import Cook.State.Manager
 import Cook.Types
-import Cook.Util
 import Cook.Uploader
+import Cook.Util
 import qualified Cook.Docker as D
 
 import Control.Monad
@@ -18,19 +18,19 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Conduit
 import Data.Maybe (fromMaybe, isJust)
+import System.Directory
 import System.Exit
 import System.FilePath
 import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
-import System.Directory
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
-import qualified Data.Streaming.Filesystem as F
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
 import qualified Data.Conduit.Combinators as C
+import qualified Data.Streaming.Filesystem as F
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
