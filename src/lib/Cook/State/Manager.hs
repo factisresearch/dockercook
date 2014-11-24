@@ -23,7 +23,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Concurrent.STM
 import Control.Monad
-import Control.Monad.Logger hiding (logInfo, logDebug, logError)
+import Control.Monad.Logger hiding (logInfo, logDebug, logError, logWarn)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
 import Data.Maybe
@@ -78,7 +78,14 @@ mkTempStateManager (StateManager{..}) =
        g' <- newTVarIO g
        nm' <- newTVarIO nm
        return $ StateManager
-                  { sm_runSql = runResourceT . runNoLoggingT . ((flip runSqlPool) pool)
+                  { sm_runSql =
+                        \action ->
+                        let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
+                        in tryTx `catch` \(e :: SomeException) ->
+                             do logWarn $ "Sqlite-Transaction failed. " ++ show e ++ ". Trying again in 5 seconds"
+                                threadDelay (1000000 * 5)
+                                tryTx `catch` \(e2 :: SomeException) ->
+                                    fail $ "Sqlite-Transaction finally failed: " ++ show e2
                   , sm_databaseFile = tmpDb
                   , sm_graph = g'
                   , sm_nodeManager = nm'
