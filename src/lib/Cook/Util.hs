@@ -1,5 +1,8 @@
 module Cook.Util where
 
+import Cook.Types
+
+import Control.Monad
 import Control.Monad.Trans
 import System.Exit
 import System.IO
@@ -7,9 +10,17 @@ import System.Log.Formatter
 import System.Log.Handler hiding (setLevel)
 import System.Log.Handler.Simple
 import System.Log.Logger
-import System.Process (system)
+import System.Process (system, rawSystem)
 
+import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
+
+quickHash :: [BS.ByteString] -> SHA1
+quickHash bsList =
+    SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
+
+concatHash :: [SHA1] -> SHA1
+concatHash sha1List = quickHash $ map unSha1 sha1List
 
 initLoggingFramework :: Priority -> IO ()
 initLoggingFramework prio =
@@ -38,3 +49,12 @@ systemStream mDir cmd _onOutput =
               Nothing -> cmd
     in do logDebug ("$ " ++ realCmd)
           system realCmd
+
+compressFilesInDir :: FilePath -> FilePath -> [FilePath] -> IO ()
+compressFilesInDir tarName dirFp files =
+    do ecTar <- rawSystem tarCmd tarArgs
+       unless (ecTar == ExitSuccess) $
+          fail ("Error creating tar:\n" ++ tarCmd ++ " " ++ unwords tarArgs)
+    where
+      tarCmd = "/usr/bin/env"
+      tarArgs = ["tar", "cjf", tarName, "-C", dirFp] ++ files

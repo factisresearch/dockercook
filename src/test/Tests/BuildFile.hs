@@ -48,8 +48,8 @@ test_parseBuildFile =
        assertEqual (Just "/DociData") (bf_unpackTarget parsed5)
     where
       commands =
-          V.fromList [ DockerCommand "RUN" "apt-get -y install node"
-                     , DockerCommand "ADD" ". /foo"
+          V.fromList [ Right $ DockerCommand "RUN" "apt-get -y install node"
+                     , Right $ DockerCommand "ADD" ". /foo"
                      ]
       sampleFile1 =
           "BASE DOCKER ubuntu:14.04"

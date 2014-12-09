@@ -1,5 +1,9 @@
 BASE DOCKER ubuntu:14.04
-RUN apt-get update && apt-get install -y nodejs npm
+BEGIN
+RUN apt-get update
+RUN apt-get install -y nodejs npm
+RUN apt-get clean
 RUN npm install -g jshint
+COMMIT
 SCRIPT include-gen.sh
 RUN ln -s /usr/bin/nodejs /usr/bin/node

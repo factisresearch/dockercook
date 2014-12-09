@@ -25,7 +25,6 @@ import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
-import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
@@ -37,10 +36,6 @@ import qualified Data.Text.IO as T
 import qualified Data.Traversable as T
 import qualified Data.Vector as V
 import qualified Filesystem.Path.CurrentOS as FP
-
-quickHash :: [BS.ByteString] -> SHA1
-quickHash bsList =
-    SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
 
 fixTailingSlash :: FilePath -> FilePath
 fixTailingSlash s =
@@ -123,6 +118,7 @@ buildImage :: D.DockerImagesCache
            -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)]
            -> Uploader -> BuildFile -> IO DockerImage
 buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf =
+    withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
@@ -142,7 +138,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                                     return rootImage
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
-
+       (dockerCommands, txHashes) <- buildTxScripts buildTempDir bf
        let contextAdd =
                case (bf_unpackTarget bf, null targetedFiles) of
                  (_, True) -> ""
@@ -150,19 +146,21 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                  (Just target, _) ->
                      BSC.concat
                      [ "COPY context.tar.gz /context.tar.gz\n"
-                     , "RUN mkdir -p ", BSC.pack target, "\n"
-                     , "RUN /usr/bin/env tar xvk --skip-old-files -f /context.tar.gz -C ", BSC.pack target, "\n"
-                     , "RUN rm -rf /context.tar.gz\n"
+                     , "RUN mkdir -p ", BSC.pack target, " && "
+                     , "/usr/bin/env tar xvk --skip-old-files -f /context.tar.gz -C ", BSC.pack target, " && "
+                     , "rm -rf /context.tar.gz\n"
                      ]
            dockerBS =
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
                           , contextAdd
-                          , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText (bf_dockerCommands bf)
+                          , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText dockerCommands
                           ]
            dockerHash = quickHash [dockerBS]
            allFHashes = map snd targetedFiles
            buildFileHash = quickHash [BSC.pack (show $ bf { bf_name = BuildFileId "static" })]
-           superHash = B16.encode $ unSha1 $ quickHash (map unSha1 (dockerHash : buildFileHash : allFHashes))
+           superHash =
+               B16.encode $ unSha1 $
+               concatHash (txHashes : dockerHash : buildFileHash : allFHashes)
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
            imageTag = T.unpack $ unDockerImage imageName
        logDebug $ "Include files: " ++ (show $ length targetedFiles)
@@ -195,7 +193,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                    return (mTag, imageName)
            else do hPutStrLn stderr ("building " ++ imageTag)
                    logDebug' "Image not found!"
-                   x <- launchImageBuilder dockerBS imageName
+                   x <- launchImageBuilder dockerBS imageName buildTempDir
                    mTag <- markImage
                    announceBegin
                    hPutStrLn stderr ("built " ++ nameTagArrow)
@@ -256,20 +254,14 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
                        (False, Nothing) -> return False
       compressContext tempDir =
           do let contextPkg = tempDir </> "context.tar.gz"
-                 tarCmd = "/usr/bin/env"
-                 tarArgs = ["tar", "cjf", contextPkg, "-C", cc_dataDir] ++
-                           (map (FP.encodeString . localName . fst) targetedFiles)
              case (null targetedFiles) of
                False ->
-                   do ecTar <- rawSystem tarCmd tarArgs
-                      unless (ecTar == ExitSuccess) $
-                             fail ("Error creating tar of context:\n" ++ tarCmd)
+                   compressFilesInDir contextPkg cc_dataDir (map (FP.encodeString . localName . fst) targetedFiles)
                True ->
                    logWarn ("You've provided an UNPACK directive, but no files "
                             ++ "match any of your INCLUDE directives...")
 
-      launchImageBuilder dockerBS imageName =
-          withSystemTempDirectory ("cook-" ++ (T.unpack $ unDockerImage imageName)) $ \tempDir ->
+      launchImageBuilder dockerBS imageName tempDir =
           do case bf_unpackTarget bf of
                Nothing ->
                    logDebug' ("No UNPACK directive. Won't copy any context! Dockerfile: " ++

@@ -83,9 +83,12 @@ You can solve this by [building more efficient Dockerfiles](http://bitjudo.com/b
 ### system.cook
 ```
 BASE DOCKER ubuntu:14.04
+BEGIN
 RUN apt-get update
 RUN apt-get install -y nodejs npm
+RUN apt-get clean
 RUN ln -s /usr/bin/nodejs /usr/bin/node
+COMMIT
 ```
 
 ### node-pkg.cook
@@ -126,6 +129,57 @@ You'll notice the following behaviour:
 * build branch B (builds: -)
 
 Lot's of time is saved because you don't need to reinstall all your packages dependencies everytime you switch branches.
+
+# Cookfile Directives
+
+## BASE COOK [cookfile]
+
+Define the current cookfiles parent cookfile. You can only use this
+directive once at the top and you can't use it in combination with `BASE
+DOCKER [dockerimage]`.
+
+## BASE DOCKER [dockerimage]
+
+The cook-image will depend on an existing docker image. You can only use this
+directive once at the top and you can't use it in combination with `BASE
+DOCKER [dockerimage]`.
+
+## INCLUDE [filepattern]
+
+Include and depend on a file. You can use this anywhere in your cook file,
+but it will be moved to the top before `UNPACK [target_dir]`.
+
+## UNPACK [target_dir]
+
+All included files will be unpacked to this directory. It will also ensure
+that the directory exists. Requires a tar binary inside your
+docker-container. You can only use this directive once.
+
+## BEGIN
+
+Begin a transaction. You can only put `SCRIPT [script]` and `RUN
+[bash_cmd]` commands inside a transaction. All commands inside the
+transaction will result in a single layer.
+
+## COMMIT
+
+Commit a transaction. This is only possible if you began a transaction ;-)
+
+## SCRIPT [script]
+
+Run a bash script and put it's result at the current position in the
+dockerfile.
+
+## PREPARE [script]
+
+This script is called before the cookfile is build. You can copy files
+into the build-directory.
+
+## All Docker-Commands
+
+Most other docker-commands are allowed in Cookfiles. `ADD` and `COPY`
+commands are not recommended, as the dependencies aren't tracked. The
+`FROM` command is allowed.
 
 # Related work
 
