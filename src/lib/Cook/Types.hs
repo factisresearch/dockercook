@@ -34,6 +34,11 @@ dummyCookConfig =
     , cc_autoPush = False
     }
 
+data ErrorWarningOk
+   = EWOError T.Text
+   | EWOWarning T.Text
+   | EWOOk
+
 newtype StreamHook =
     StreamHook { unStreamHook :: BS.ByteString -> IO () }
 

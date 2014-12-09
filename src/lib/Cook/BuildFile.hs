@@ -159,6 +159,17 @@ constructBuildFile cookDir fp theLines =
       _ ->
           return $ Left "Missing BASE line!"
     where
+      checkDocker (DockerCommand cmd _) action =
+          let lowerCmd = T.toLower cmd
+          in case lowerCmd of
+               "from" -> return $ Left "FROM command is not allowed in dockercook files"
+               "add" ->
+                   do logWarn "ADD commands are not recommended as the dependencies aren't tracked."
+                      action
+               "copy" ->
+                   do logWarn "COPY commands are not recommended as the dependencies aren't tracked."
+                      action
+               _ -> action
       baseCheck base onSuccess =
           case base of
             BuildBaseCook cookId ->
@@ -184,7 +195,7 @@ constructBuildFile cookDir fp theLines =
                   Just currentTx ->
                      case line of
                        DockerLine dockerCmd ->
-                           handleLineTx dockerCmd buildFile currentTx rest
+                           checkDocker dockerCmd $ handleLineTx dockerCmd buildFile currentTx rest
                        ScriptLine scriptLoc mArgs ->
                            handleScriptLine scriptLoc mArgs buildFile inTx rest
                        CommitTxLine ->
@@ -195,6 +206,7 @@ constructBuildFile cookDir fp theLines =
                        ScriptLine scriptLoc mArgs ->
                            handleScriptLine scriptLoc mArgs buildFile inTx rest
                        DockerLine dockerCmd ->
+                           checkDocker dockerCmd $
                            handleLine (Right $ buildFile { bf_dockerCommands = V.snoc (bf_dockerCommands buildFile) (Right dockerCmd) }) inTx rest
                        IncludeLine pattern ->
                            handleLine (Right $ buildFile { bf_include = V.snoc (bf_include buildFile) pattern }) inTx rest
