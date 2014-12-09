@@ -115,16 +115,16 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
 
 buildImage :: D.DockerImagesCache
            -> Maybe StreamHook
-           -> CookConfig -> StateManager -> [(FP.FilePath, SHA1)]
+           -> CookConfig -> StateManager -> HashManager -> [(FP.FilePath, SHA1)]
            -> Uploader -> BuildFile -> IO DockerImage
-buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uploader bf =
+buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader bf =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cfg parentBuildFile
-                    buildImage imCache mStreamHook cfg stateManager fileHashes uploader parent
+                    buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader parent
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
@@ -256,7 +256,15 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager fileHashes uplo
           do let contextPkg = tempDir </> "context.tar.gz"
              case (null targetedFiles) of
                False ->
-                   compressFilesInDir contextPkg cc_dataDir (map (FP.encodeString . localName . fst) targetedFiles)
+                   do
+                      let includedFiles = map (FP.encodeString . localName . fst) targetedFiles
+                      compressFilesInDir contextPkg cc_dataDir includedFiles
+                      currentDir <- getCurrentDirectory
+                      let includedFilesFull = map (FP.encodeString . fst) targetedFiles
+                      forM_ includedFilesFull $ \f ->
+                          do didChange <- (hm_didFileChange hashManager) (currentDir </> f)
+                             when didChange $
+                                fail $ "Inconsistency error: File " ++ f ++ " changed during build!"
                True ->
                    logWarn ("You've provided an UNPACK directive, but no files "
                             ++ "match any of your INCLUDE directives...")
@@ -305,7 +313,7 @@ cookBuild cfg@(CookConfig{..}) uploader mStreamHook =
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
        imCache <- D.newDockerImagesCache
-       res <- mapM (buildImage imCache mStreamHook cfg stateManager fileHashes uploader) roots
+       res <- mapM (buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
        logInfo "Finished building all required images!"
        return res
     where

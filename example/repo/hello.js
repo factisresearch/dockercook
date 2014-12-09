@@ -13,5 +13,5 @@ var server = http.createServer(function(request, response) {
   response.end();
 });
 
-server.listen(80);
 console.log("I've been cooked! ouch!");
+server.listen(80);

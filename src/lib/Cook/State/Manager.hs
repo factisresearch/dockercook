@@ -60,6 +60,7 @@ data StateManager
 data HashManager
    = HashManager
    { hm_lookup :: forall m. MonadIO m => FilePath -> m SHA1 -> m SHA1
+   , hm_didFileChange :: forall m. MonadIO m => FilePath -> m Bool
    , hm_waitForWrites :: IO ()
    }
 
@@ -131,6 +132,7 @@ createStateManager stateDirectory =
                HashManager
                { hm_lookup = hashManagerLookup stateMgr hashMapV hashWriteChan
                , hm_waitForWrites = waitForHashes workV hashWriteChan
+               , hm_didFileChange = didFileChange stateMgr hashMapV
                }
        return (stateMgr, hashMgr)
     where
@@ -188,6 +190,29 @@ hashManagerPersistWorker (StateManager{..}) workEnqueuedVar hashWriteChan =
              threadDelay 1000000 -- 1 sec
              loop batchV
 
+didFileChange :: MonadIO m
+              => StateManager
+              -> TVar (HM.HashMap FilePath (UTCTime, SHA1))
+              -> FilePath
+              -> m Bool
+didFileChange (StateManager{..}) hashMapV fullFilePath =
+    liftIO $
+    do fileExists <- doesFileExist fullFilePath
+       if not fileExists
+       then return True
+       else do currModTime <- getModTime fullFilePath
+               mEntry <- liftIO $ atomically $ HM.lookup fullFilePath <$> readTVar hashMapV
+               case mEntry of
+                 Nothing ->
+                     return True
+                 Just (oldMtime, _) ->
+                     return (oldMtime /= currModTime)
+
+getModTime :: FilePath -> IO UTCTime
+getModTime fullFilePath =
+    do stat <- liftIO $ getFileStatus fullFilePath
+       return $ (\t -> posixSecondsToUTCTime (realToFrac t :: POSIXTime)) $ modificationTime stat
+
 hashManagerLookup :: MonadIO m
                   => StateManager
                   -> TVar (HM.HashMap FilePath (UTCTime, SHA1))
@@ -196,8 +221,7 @@ hashManagerLookup :: MonadIO m
                   -> m SHA1
                   -> m SHA1
 hashManagerLookup (StateManager{..}) hashMapV hashWriteChan fullFilePath computeHash =
-    do stat <- liftIO $ getFileStatus fullFilePath
-       let modTime = (\t -> posixSecondsToUTCTime (realToFrac t :: POSIXTime)) $ modificationTime stat
+    do modTime <- liftIO $ getModTime fullFilePath
        mEntry <- liftIO $ atomically $ HM.lookup fullFilePath <$> readTVar hashMapV
        let recomputeHash =
                do newHash <- computeHash
