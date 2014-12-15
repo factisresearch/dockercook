@@ -10,11 +10,13 @@ import Cook.Sync
 import Cook.Types
 import Cook.Uploader
 import Cook.Util
+import Cook.State.Manager
 
 import Control.Monad
 import Options.Applicative
 import System.Exit
 import System.Log
+import System.Directory
 import System.Process
 
 runProg :: (Int, CookCmd) -> IO ()
@@ -40,7 +42,8 @@ runProg' cmd =
     case cmd of
       CookBuild buildCfg ->
           do uploader <- mkUploader 100
-             _ <- cookBuild buildCfg uploader Nothing
+             stateDir <- findStateDirectory
+             _ <- cookBuild stateDir buildCfg uploader Nothing
              when (cc_autoPush buildCfg) $
                do logInfo $ "Waiting for all images to finish beeing pushed"
                   waitForCompletion uploader
@@ -48,14 +51,20 @@ runProg' cmd =
                   unless (null missingImages) $
                       logError "Uploader confirmed completion but still had images in the pipeline!"
              return ()
-      CookClean stateDir daysToKeep dryRun ->
-          cookClean stateDir daysToKeep dryRun
-      CookSync stateDir ->
-          runSync stateDir
+      CookClean daysToKeep dryRun ->
+          do stateDir <- findStateDirectory
+             cookClean stateDir daysToKeep dryRun
+      CookSync ->
+          do stateDir <- findStateDirectory
+             runSync stateDir
       CookParse file ->
           cookParse file
       CookVersion ->
           putStrLn ("dockercook " ++ showVersion version)
+      CookInit ->
+          do createDirectoryIfMissing True _STATE_DIR_NAME_
+             _ <- createStateManager _STATE_DIR_NAME_
+             putStrLn "My kitchen is ready for cooking!"
 
 main :: IO ()
 main =

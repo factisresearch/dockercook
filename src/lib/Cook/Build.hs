@@ -302,10 +302,9 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) fileHashes
 
 
-cookBuild :: CookConfig -> Uploader -> Maybe StreamHook -> IO [DockerImage]
-cookBuild cfg@(CookConfig{..}) uploader mStreamHook =
-    do createDirectoryIfMissing True cc_stateDir
-       (stateManager, hashManager) <- createStateManager cc_stateDir
+cookBuild :: FilePath -> CookConfig -> Uploader -> Maybe StreamHook -> IO [DockerImage]
+cookBuild stateDir cfg@(CookConfig{..}) uploader mStreamHook =
+    do (stateManager, hashManager) <- createStateManager stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
        logDebug "Waiting for hashes to be stored on disk..."

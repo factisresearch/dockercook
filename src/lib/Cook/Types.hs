@@ -9,8 +9,7 @@ import qualified Data.Text as T
 
 data CookConfig
    = CookConfig
-   { cc_stateDir :: FilePath
-   , cc_dataDir :: FilePath
+   { cc_dataDir :: FilePath
    , cc_buildFileDir :: FilePath
    , cc_boringFile :: Maybe FilePath
    , cc_tagprefix :: Maybe String          -- additionally tag images using this prefix + cook filename
@@ -23,8 +22,7 @@ data CookConfig
 dummyCookConfig :: CookConfig
 dummyCookConfig =
     CookConfig
-    { cc_stateDir = "STATE_DIR"
-    , cc_dataDir = "DATA_DIR"
+    { cc_dataDir = "DATA_DIR"
     , cc_buildFileDir = "BUILD_FILE_DIR"
     , cc_boringFile = Nothing
     , cc_tagprefix = Nothing

@@ -2,32 +2,18 @@ module Cook.ArgParse (argParse, CookCmd(..)) where
 
 import Cook.Types
 import Options.Applicative
-import System.FilePath ((</>))
-import System.Environment (getEnv)
-import System.IO.Unsafe (unsafePerformIO)
 
 data CookCmd
    = CookBuild CookConfig
-   | CookClean FilePath Int Bool
+   | CookClean Int Bool
    | CookParse FilePath
-   | CookSync FilePath
+   | CookSync
    | CookVersion
+   | CookInit
    deriving (Show, Eq)
-
-home :: FilePath
-home =
-    unsafePerformIO $ getEnv "HOME"
 
 cookKeepDaysP =
     option ( long "keep" <> short 'k' <> metavar "DAYS" <> help "Days of docker images to keep")
-
-cookStateP =
-    strOption $
-    long "state" <>
-    short 's' <>
-    metavar "DIRECTORY" <>
-    value (home </> ".dockercook") <>
-    help "Directory where dockercook stores its meta info"
 
 cookFileP =
     strOption $
@@ -103,8 +89,7 @@ cookM4P =
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
-    (CookConfig <$> cookStateP
-                <*> cookDataP
+    (CookConfig <$> cookDataP
                 <*> cookBuildP
                 <*> cookBoringP
                 <*> cookTagP
@@ -116,11 +101,10 @@ cookOptions =
 
 cookClean :: Parser CookCmd
 cookClean =
-    CookClean <$> cookStateP <*> cookKeepDaysP <*> dryRunP
+    CookClean <$> cookKeepDaysP <*> dryRunP
 
 cookSync :: Parser CookCmd
-cookSync =
-    CookSync <$> cookStateP
+cookSync = pure CookSync
 
 cookParse :: Parser CookCmd
 cookParse =
@@ -138,4 +122,5 @@ argParse' =
     <> command "parse" (info cookParse ( progDesc "Parse the given file" ))
     <> command "sync" (info cookSync ( progDesc "Sync local state with remote docker server" ))
     <> command "version" (info (pure CookVersion) ( progDesc "Show programs version" ))
+    <> command "init" (info (pure CookInit) ( progDesc "Enable dockercook for current project / directory" ))
     )

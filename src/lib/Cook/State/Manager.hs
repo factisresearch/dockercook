@@ -11,6 +11,7 @@ module Cook.State.Manager
     , mkTempStateManager
     , syncImages
     , getImageId, setImageId
+    , _STATE_DIR_NAME_, findStateDirectory
     )
 where
 
@@ -89,6 +90,22 @@ mkTempStateManager (StateManager{..}) =
                   , sm_nodeManager = nm'
                   , sm_persistGraph = return ()
                   }
+
+_STATE_DIR_NAME_ = ".kitchen"
+
+findStateDirectory :: IO FilePath
+findStateDirectory =
+    do currentDir <- getCurrentDirectory
+       checkLoop currentDir
+    where
+      checkLoop parentDir =
+          do logDebug $ "Looking for a " ++ _STATE_DIR_NAME_ ++ " directory in " ++ parentDir
+             isThere <- doesDirectoryExist (parentDir </> _STATE_DIR_NAME_)
+             if isThere
+             then return parentDir
+             else do when (normalise parentDir == "/" || normalise parentDir == "") $
+                          fail "Can't find my kitchen! Did you run dockercook init?"
+                     checkLoop (normalise $ takeDirectory parentDir)
 
 createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
