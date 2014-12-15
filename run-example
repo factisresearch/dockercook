@@ -1,2 +1,5 @@
 #!/bin/bash
-dist/build/dockercook/dockercook cook -s example/state -d example/repo -b example/build -p project
+DOCKERCOOK=../dist/build/dockercook/dockercook
+cd example
+"$DOCKERCOOK" init
+"$DOCKERCOOK" cook -d repo -b build -p project

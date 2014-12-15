@@ -5,7 +5,7 @@ module Cook.BuildFile
     ( BuildFileId(..), BuildFile(..), BuildBase(..), DockerCommand(..), TxRef
     , dockerCmdToText
     , parseBuildFile
-    , buildTxScripts
+    , buildTxScripts, copyTarAndUnpack
     , FilePattern, matchesFilePattern, parseFilePattern
     -- don't use - only exported for testing
     , parseBuildFileText
@@ -131,13 +131,7 @@ buildTxScripts dockerFileEnvDir bf =
                 DockerCommand "RUN" (T.pack $ "bash " ++ (dockerTarDir </> "tx_" ++ show refId ++ ".sh"))
             Right cmd -> cmd
       pre =
-          V.fromList
-          [ DockerCommand "COPY" "tx.tar.gz /tx.tar.gz"
-          , DockerCommand "RUN" $ T.pack $
-            "mkdir -p " ++ dockerTarDir
-            ++ " && /usr/bin/env tar xvk --skip-old-files -f /tx.tar.gz -C " ++ dockerTarDir
-            ++ " && rm -rf /tx.tar.gz"
-          ]
+          V.fromList (copyTarAndUnpack "tx.tar.gz" dockerTarDir)
       post =
           V.fromList
           [ DockerCommand "RUN" (T.pack $ "rm -rf " ++ dockerTarDir)
@@ -149,6 +143,15 @@ buildTxScripts dockerFileEnvDir bf =
                     : (T.pack $ "echo 'DockercookTx # " ++ show txId ++ "'")
                     : "set -e" : "set -x" : V.toList scriptLines
                     )
+
+copyTarAndUnpack :: FilePath -> FilePath -> [DockerCommand]
+copyTarAndUnpack tarName imageDest =
+    [ DockerCommand "COPY" (T.pack $ tarName ++ " /" ++ tarName)
+    , DockerCommand "RUN" $ T.pack $
+      "mkdir -p " ++ imageDest
+      ++ " && /usr/bin/env tar xvk --skip-old-files -f /" ++ tarName ++ " -C " ++ imageDest
+      ++ " && rm -rf /" ++ tarName
+    ]
 
 
 constructBuildFile :: FilePath -> FilePath -> [BuildFileLine] -> IO (Either String BuildFile)
@@ -164,7 +167,7 @@ constructBuildFile cookDir fp theLines =
           in case lowerCmd of
                "from" -> return $ Left "FROM command is not allowed in dockercook files"
                "add" ->
-                   do logWarn "ADD commands are not recommended as the dependencies aren't tracked."
+                   do logWarn "ADD commands are only recommended in combination with PREPARE scripts."
                       action
                "copy" ->
                    do logWarn "COPY commands are not recommended as the dependencies aren't tracked."
