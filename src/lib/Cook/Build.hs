@@ -336,12 +336,11 @@ cookBuild stateDir cfg@(CookConfig{..}) uploader mStreamHook =
     do (stateManager, hashManager) <- createStateManager stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
-       logDebug "Waiting for hashes to be stored on disk..."
-       hm_waitForWrites hashManager
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
        imCache <- D.newDockerImagesCache
        res <- mapM (buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
+       waitForWrites stateManager
        logInfo "Finished building all required images!"
        return res
     where

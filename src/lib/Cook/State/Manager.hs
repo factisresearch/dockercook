@@ -7,8 +7,7 @@ module Cook.State.Manager
     ( StateManager, HashManager(..)
     , createStateManager, markUsingImage
     , isImageKnown, fastFileHash
-    , mkTempStateManager
-    , syncImages
+    , syncImages, waitForWrites
     , getImageId, setImageId
     , _STATE_DIR_NAME_, findStateDirectory
     )
@@ -33,7 +32,6 @@ import Data.Time.Clock.POSIX
 import Database.Persist.Sqlite
 import System.Directory
 import System.FilePath
-import System.IO
 import System.Posix.Files
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
@@ -41,35 +39,20 @@ import qualified Data.Vector as V
 
 data StateManager
    = StateManager
-   { sm_runSql :: forall a. SqlPersistM a -> IO a
+   { sm_runSqlGet :: forall a. SqlPersistM a -> IO a
+   , sm_runSqlWrite :: SqlPersistM () -> IO ()
    , sm_databaseFile :: FilePath
+   , sm_waitForWrites :: IO ()
    }
 
 data HashManager
    = HashManager
    { hm_lookup :: forall m. MonadIO m => FilePath -> m SHA1 -> m SHA1
    , hm_didFileChange :: forall m. MonadIO m => FilePath -> m Bool
-   , hm_waitForWrites :: IO ()
    }
 
 fastFileHash :: forall m. MonadIO m => HashManager -> FilePath -> m SHA1 -> m SHA1
 fastFileHash hm = hm_lookup hm
-
-mkTempStateManager :: StateManager -> IO StateManager
-mkTempStateManager (StateManager{..}) =
-    do tmpDir <- getTemporaryDirectory
-       (tmpDb, hdl) <- openTempFile tmpDir "dockercookXXX.db"
-       hClose hdl
-       copyFile sm_databaseFile tmpDb
-       pool <- createSqlitePool (T.pack tmpDb) 5
-       return $ StateManager
-                  { sm_runSql =
-                        \action ->
-                        let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
-                        in (recoverAll (exponentialBackoff 500000 <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
-                              fail $ "Sqlite-Transaction finally failed: " ++ show e
-                  , sm_databaseFile = tmpDb
-                  }
 
 _STATE_DIR_NAME_ = ".kitchen"
 
@@ -87,19 +70,22 @@ findStateDirectory =
                           fail "Can't find my kitchen! Did you run dockercook init?"
                      checkLoop (normalise $ takeDirectory parentDir)
 
+waitForWrites :: StateManager -> IO ()
+waitForWrites st =
+    sm_waitForWrites st
+
 createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
     do logDebug $ "Creating state manager with directory " ++ stateDirectory
        pool <- createSqlitePool (T.pack sqlLoc) 5
-       let runSql = runResourceT . runNoLoggingT . ((flip runSqlPool) pool)
+       let runSql action =
+               let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
+               in (recoverAll (exponentialBackoff 500000 <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
+                    fail $ "Sqlite-Transaction finally failed: " ++ show e
        runSql (runMigration migrateState)
-       let stateMgr =
-               StateManager
-               { sm_runSql = runSql
-               , sm_databaseFile = stateDirectory </> "database.db"
-               }
-       logDebug $ "Initializing hash manager"
+       sqlQueue <- newTBQueueIO 100
        allHashes <- runSql $ selectList [] []
+       logDebug $ "Initializing hash manager"
        let hashMap =
                foldl (\hm entity ->
                           let v = entityVal entity
@@ -108,16 +94,38 @@ createStateManager stateDirectory =
        hashMapV <- newTVarIO hashMap
        hashWriteChan <- newTBQueueIO 1000
        workV <- newTVarIO False
+       let waitWrites =
+               atomically $
+               do emptyQ <- isEmptyTBQueue sqlQueue
+                  unless emptyQ $ retry
+           stateMgr =
+               StateManager
+               { sm_runSqlGet =
+                     \action ->
+                     do liftIO waitWrites
+                        runSql action
+               , sm_runSqlWrite =
+                   \writeReq ->
+                       atomically $ writeTBQueue sqlQueue writeReq
+               , sm_databaseFile = stateDirectory </> "database.db"
+               , sm_waitForWrites =
+                   do waitForHashes workV hashWriteChan
+                      waitWrites
+               }
        _ <- forkIO (hashManagerPersistWorker stateMgr workV hashWriteChan)
+       _ <- forkIO (queueWorker runSql sqlQueue)
        let hashMgr =
                HashManager
                { hm_lookup = hashManagerLookup stateMgr hashMapV hashWriteChan
-               , hm_waitForWrites = waitForHashes workV hashWriteChan
                , hm_didFileChange = didFileChange stateMgr hashMapV
                }
        return (stateMgr, hashMgr)
     where
       sqlLoc = stateDirectory </> "database.db"
+      queueWorker runSql queue =
+          do action <- atomically $ readTBQueue queue
+             _ <- runSql action
+             queueWorker runSql queue
 
 waitForHashes :: TVar Bool -> TBQueue DbHashCache -> IO ()
 waitForHashes workEnqueuedVar hashWriteChan =
@@ -150,12 +158,12 @@ hashManagerPersistWorker (StateManager{..}) workEnqueuedVar hashWriteChan =
                       writeTVar batchV V.empty
                       return v
              let sqlAction =
-                     sm_runSql $
-                          do let xs = V.toList writeBatch
-                             mapM_ (\oldHash -> deleteWhere [DbHashCacheFullPath ==. oldHash]) (map dbHashCacheFullPath xs)
-                             _ <- insertMany xs
-                             logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
-                             return ()
+                     sm_runSqlWrite $
+                     do let xs = V.toList writeBatch
+                        mapM_ (\oldHash -> deleteWhere [DbHashCacheFullPath ==. oldHash]) (map dbHashCacheFullPath xs)
+                        _ <- insertMany xs
+                        logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
+                        return ()
              logDebug $ "Storing " ++ (show $ V.length writeBatch) ++ " hashes in database."
              atomically $ writeTVar workEnqueuedVar False
              sqlAction `catch` \(e :: SomeException) ->
@@ -215,7 +223,7 @@ hashManagerLookup (StateManager{..}) hashMapV hashWriteChan fullFilePath compute
 
 syncImages :: StateManager -> (DockerImage -> IO Bool) -> IO ()
 syncImages (StateManager{..}) imageStillExists =
-    do x <- sm_runSql $ selectList [] []
+    do x <- sm_runSqlGet $ selectList [] []
        forM_ x $ \entity ->
            do let dockerImage = entityVal entity
                   name = dbDockerImageName dockerImage
@@ -223,16 +231,17 @@ syncImages (StateManager{..}) imageStillExists =
               unless exists $
                  do logInfo ("The image " ++ T.unpack name
                              ++ " doesn't exist on remote docker server. Removing it from local state.")
-                    sm_runSql $ delete (entityKey entity)
+                    sm_runSqlWrite $ delete (entityKey entity)
+       sm_waitForWrites
 
 isImageKnown :: StateManager -> DockerImage -> IO Bool
 isImageKnown (StateManager{..}) (DockerImage imageName) =
-    do x <- sm_runSql $ getBy (UniqueDbDockerImage imageName)
+    do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
        return (isJust x)
 
 getImageId :: StateManager -> DockerImage -> IO (Maybe DockerImageId)
 getImageId (StateManager{..}) (DockerImage imageName) =
-    do x <- sm_runSql $ getBy (UniqueDbDockerImage imageName)
+    do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
        case x of
          Nothing -> return Nothing
          Just entity ->
@@ -240,17 +249,18 @@ getImageId (StateManager{..}) (DockerImage imageName) =
 
 setImageId :: StateManager -> DockerImage -> DockerImageId -> IO ()
 setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId) =
-    sm_runSql $ updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId) ]
+    sm_runSqlWrite $ updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId) ]
 
 markUsingImage :: StateManager -> DockerImage -> IO ()
 markUsingImage (StateManager{..}) (DockerImage imageName) =
-    do mImageEntity <- sm_runSql $ getBy (UniqueDbDockerImage imageName)
+    do mImageEntity <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
        now <- getCurrentTime
        case mImageEntity of
          Nothing ->
-             do _ <- sm_runSql $ insert $ DbDockerImage imageName Nothing now now 1
+             sm_runSqlWrite $
+             do _ <- insert $ DbDockerImage imageName Nothing now now 1
                 return ()
          Just imageEntity ->
-             sm_runSql $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1
-                                                        , DbDockerImageLastUsed =. now
-                                                        ]
+             sm_runSqlGet $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1
+                                                           , DbDockerImageLastUsed =. now
+                                                           ]

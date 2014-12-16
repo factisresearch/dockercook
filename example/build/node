@@ -3,7 +3,7 @@ BEGIN
 RUN apt-get update
 RUN apt-get install -y nodejs npm
 RUN apt-get clean
-COMMIT
 RUN npm install -g jshint
+COMMIT
 SCRIPT include-gen.sh
 RUN ln -s /usr/bin/nodejs /usr/bin/node

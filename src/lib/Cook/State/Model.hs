@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Cook.State.Model where
 
 import Data.Time.Clock
