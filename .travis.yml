@@ -32,5 +32,6 @@ install:
   - $CABAL configure -flib-Werror --enable-tests $MODE
 
 script:
+  - $CABAL check
   - $CABAL build
   - $CABAL test --show-details=always
