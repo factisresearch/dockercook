@@ -81,6 +81,7 @@ cookOptions =
                 <*> cookTagP
                 <*> cookFileDropP
                 <*> (switch (long "push" <> help "Push built docker containers"))
+                <*> (switch (long "force-rebuild" <> help "Rebuild all docker images regardless of dependency changes"))
                 <*> ((++) <$> many cookEntryPointP_deprecated
                           <*> many (argument str (metavar "COOKFILE"))))
 

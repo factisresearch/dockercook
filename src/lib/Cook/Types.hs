@@ -13,6 +13,7 @@ data CookConfig
    , cc_tagprefix :: Maybe String          -- additionally tag images using this prefix + cook filename
    , cc_cookFileDropCount :: Int           -- drop this many chars from every cook filename
    , cc_autoPush :: Bool
+   , cc_forceRebuild :: Bool
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 
@@ -26,6 +27,7 @@ dummyCookConfig =
     , cc_cookFileDropCount = 0
     , cc_buildEntryPoints = []
     , cc_autoPush = False
+    , cc_forceRebuild = False
     }
 
 data ErrorWarningOk

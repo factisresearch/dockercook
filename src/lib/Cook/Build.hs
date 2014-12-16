@@ -218,13 +218,16 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
        announceBegin
        imageExists <- dockerImageExists imageName
        (mNewTag, newImage) <-
-           if imageExists
+           if imageExists && (not cc_forceRebuild)
            then do hPutStrLn stderr ("found " ++ nameTagArrow)
                    logDebug' "The image already exists!"
                    mTag <- markImage
                    return (mTag, imageName)
-           else do hPutStrLn stderr ("building " ++ imageTag)
-                   logDebug' "Image not found!"
+           else do hPutStrLn stderr ("building " ++ imageTag ++ " ("
+                                     ++ if cc_forceRebuild then "forced" else "hash changed"
+                                     ++ ")"
+                                    )
+                   unless (cc_forceRebuild) $ logDebug' "Image not found!"
                    x <- launchImageBuilder dockerBS imageName buildTempDir
                    mTag <- markImage
                    announceBegin
