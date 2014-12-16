@@ -72,11 +72,6 @@ cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
                            <> help "File with regex list of ignored files." )
 
-cookM4P =
-    switch
-    ( long "m4"
-      <> help "Apply m4 preprocessor to cook files" )
-
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
@@ -85,7 +80,6 @@ cookOptions =
                 <*> cookBoringP
                 <*> cookTagP
                 <*> cookFileDropP
-                <*> cookM4P
                 <*> (switch (long "push" <> help "Push built docker containers"))
                 <*> ((++) <$> many cookEntryPointP_deprecated
                           <*> many (argument str (metavar "COOKFILE"))))

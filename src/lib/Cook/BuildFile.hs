@@ -251,22 +251,9 @@ constructBuildFile cookDir fp theLines =
                   handleLine (Right buildFile') (Just txRef) rest
 
 parseBuildFile :: CookConfig -> FilePath -> IO (Either String BuildFile)
-parseBuildFile cfg fp
-    | cc_m4 cfg =
-        do (exc, out, err) <- readProcessWithExitCode "m4" ["-I", cc_buildFileDir cfg, fp] ""
-           case exc of
-             ExitSuccess
-                 | null err ->
-                     parseBuildFileText cfg fp (T.pack out)
-                 | otherwise ->
-                   return (Left ("m4 succeeded but produced output on stderr "
-                                 ++ " while processing " ++ fp ++ ": " ++ err))
-             ExitFailure code ->
-                 return (Left ("m4 failed with exit code " ++ show code
-                               ++ " while processing " ++ fp ++ ": " ++ err))
-    | otherwise =
-        do t <- T.readFile fp
-           parseBuildFileText cfg fp t
+parseBuildFile cfg fp =
+    do t <- T.readFile fp
+       parseBuildFileText cfg fp t
 
 parseBuildFileText :: CookConfig -> FilePath -> T.Text -> IO (Either String BuildFile)
 parseBuildFileText cfg fp t =
