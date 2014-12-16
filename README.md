@@ -11,9 +11,19 @@ dockercook
 # Commands
 
 ```
-$ dockercook help
-$ dockercook cook [args]
-$ dockercook clean [args]
+Usage: dockercook [-v|--verbosity INT] COMMAND
+  Speed up docker image building
+
+Available options:
+  -h,--help                Show this help text
+  -v,--verbosity INT       log levels for 0 - 3
+
+Available commands:
+  cook                     Cook docker images
+  parse                    Parse the given file
+  sync                     Sync local state with remote docker server
+  version                  Show programs version
+  init                     Enable dockercook for current project / directory
 ```
 
 # Motivation / Tutorial
@@ -111,7 +121,9 @@ CMD node ./app.js
 Now you'd build your repository branches using `dockercook cook`:
 
 ```
-$ cd $HOME/my-repo && git checkout branchA
+$ cd $HOME/my-repo
+$ dockercook init # only the first time
+$ git checkout branchA
 ...
 $ dockercook cook --state /tmp/build-state --data $HOME/my-repo --buildfiles $HOME/my-repo/cookfiles --entrypoint app.cook
 ...

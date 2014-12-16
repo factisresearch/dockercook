@@ -77,7 +77,7 @@ waitForWrites st =
 createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
     do logDebug $ "Creating state manager with directory " ++ stateDirectory
-       pool <- createSqlitePool (T.pack sqlLoc) 5
+       pool <- runNoLoggingT $ createSqlitePool (T.pack sqlLoc) 5
        let runSql action =
                let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
                in (recoverAll (exponentialBackoff 500000 <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
