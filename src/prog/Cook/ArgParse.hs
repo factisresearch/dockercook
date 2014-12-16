@@ -5,15 +5,11 @@ import Options.Applicative
 
 data CookCmd
    = CookBuild CookConfig
-   | CookClean Int Bool
    | CookParse FilePath
    | CookSync
    | CookVersion
    | CookInit
    deriving (Show, Eq)
-
-cookKeepDaysP =
-    option ( long "keep" <> short 'k' <> metavar "DAYS" <> help "Days of docker images to keep")
 
 cookFileP =
     strOption $
@@ -76,11 +72,6 @@ cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
                            <> help "File with regex list of ignored files." )
 
-dryRunP =
-    switch
-    ( long "dry-run"
-      <> help "Don't really delete anything" )
-
 cookM4P =
     switch
     ( long "m4"
@@ -99,10 +90,6 @@ cookOptions =
                 <*> ((++) <$> many cookEntryPointP_deprecated
                           <*> many (argument str (metavar "COOKFILE"))))
 
-cookClean :: Parser CookCmd
-cookClean =
-    CookClean <$> cookKeepDaysP <*> dryRunP
-
 cookSync :: Parser CookCmd
 cookSync = pure CookSync
 
@@ -118,7 +105,6 @@ argParse' :: Parser CookCmd
 argParse' =
     subparser
     (  command "cook" (info cookOptions ( progDesc "Cook docker images" ))
-    <> command "clean" (info cookClean ( progDesc "Cleanup docker images that are no longer needed" ))
     <> command "parse" (info cookParse ( progDesc "Parse the given file" ))
     <> command "sync" (info cookSync ( progDesc "Sync local state with remote docker server" ))
     <> command "version" (info (pure CookVersion) ( progDesc "Show programs version" ))

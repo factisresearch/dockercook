@@ -1,9 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Cook.Types where
 
-import Control.Applicative
 import Data.Hashable
-import Data.SafeCopy
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
@@ -48,14 +46,6 @@ newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable)
 
-instance SafeCopy DockerImage where
-    putCopy (DockerImage im) = contain $ safePut im
-    getCopy = contain $ DockerImage <$> safeGet
-
 newtype DockerImageId
     = DockerImageId { unDockerImageId :: T.Text }
     deriving (Show, Eq, Hashable)
-
-instance SafeCopy DockerImageId where
-    putCopy (DockerImageId im) = contain $ safePut im
-    getCopy = contain $ DockerImageId <$> safeGet

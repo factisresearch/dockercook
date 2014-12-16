@@ -20,9 +20,7 @@ DbDockerImage
     creationDate UTCTime
     lastUsed UTCTime
     usageCount Int
-    nodeId Int
     UniqueDbDockerImage name
-    UniqueGraphNodeId nodeId
     deriving Show
 DbHashCache
     fullPath FilePath

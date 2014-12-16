@@ -153,13 +153,13 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
-                    then do markUsingImage stateManager rootImage Nothing
+                    then do markUsingImage stateManager rootImage
                             return rootImage
                     else do logDebug' $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
                             (ec, stdOut, stdErr) <-
                                 readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
-                            then do markUsingImage stateManager rootImage Nothing
+                            then do markUsingImage stateManager rootImage
                                     return rootImage
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
@@ -204,7 +204,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                fmap (\prefix -> prefix ++ drop cc_cookFileDropCount name) cc_tagprefix
            markImage :: IO (Maybe DockerImage)
            markImage =
-               do markUsingImage stateManager imageName (Just baseImage)
+               do markUsingImage stateManager imageName
                   T.forM mUserTagName $ \userTag ->
                       do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ userTag) streamHook
                          return (DockerImage $ T.pack userTag)

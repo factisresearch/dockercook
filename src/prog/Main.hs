@@ -5,7 +5,6 @@ import Data.Version (showVersion)
 
 import Cook.ArgParse
 import Cook.Build
-import Cook.Clean
 import Cook.Sync
 import Cook.Types
 import Cook.Uploader
@@ -51,9 +50,6 @@ runProg' cmd =
                   unless (null missingImages) $
                       logError "Uploader confirmed completion but still had images in the pipeline!"
              return ()
-      CookClean daysToKeep dryRun ->
-          do stateDir <- findStateDirectory
-             cookClean stateDir daysToKeep dryRun
       CookSync ->
           do stateDir <- findStateDirectory
              runSync stateDir
