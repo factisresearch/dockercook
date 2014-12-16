@@ -33,7 +33,7 @@ cookDataP =
     short 'd' <>
     metavar "DIRECTORY" <>
     value "." <>
-    help "Directory where to find source files"
+    help "Directory where to find INCLUDED files"
 
 cookBuildP =
     strOption $
@@ -100,7 +100,7 @@ argParse' :: Parser CookCmd
 argParse' =
     subparser
     (  command "cook" (info cookOptions ( progDesc "Cook docker images" ))
-    <> command "parse" (info cookParse ( progDesc "Parse the given file" ))
+    <> command "check" (info cookParse ( progDesc "Validate a Dockercook file" ))
     <> command "sync" (info cookSync ( progDesc "Sync local state with remote docker server" ))
     <> command "version" (info (pure CookVersion) ( progDesc "Show programs version" ))
     <> command "init" (info (pure CookInit) ( progDesc "Enable dockercook for current project / directory" ))
