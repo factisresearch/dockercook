@@ -170,10 +170,13 @@ Commit a transaction. This is only possible if you began a transaction ;-)
 Run a bash script and put it's result at the current position in the
 dockerfile.
 
-## PREPARE [script]
+## PREPARE [shell-command]
 
-This script is called before the cookfile is build. You can copy files
-into the build-directory.
+This shell command is executed in an empty directory and is useful to copy
+additional files into the build context. Any file that you copy in the
+working directory of the shell-command will be available in your cook file
+from the `/_cookpreps` directory. All `PREPARE` commands in one file will be
+executed in the same preparation directory. For more information check the example.
 
 ## All Docker-Commands
 

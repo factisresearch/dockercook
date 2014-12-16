@@ -2,7 +2,7 @@
 scratch/
 COOKFAILED/
 .HTF/
-example/state
+example/.kitchen
 
 # haskell
 dist

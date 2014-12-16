@@ -102,7 +102,7 @@ findStateDirectory =
           do logDebug $ "Looking for a " ++ _STATE_DIR_NAME_ ++ " directory in " ++ parentDir
              isThere <- doesDirectoryExist (parentDir </> _STATE_DIR_NAME_)
              if isThere
-             then return parentDir
+             then return (parentDir </> _STATE_DIR_NAME_)
              else do when (normalise parentDir == "/" || normalise parentDir == "") $
                           fail "Can't find my kitchen! Did you run dockercook init?"
                      checkLoop (normalise $ takeDirectory parentDir)

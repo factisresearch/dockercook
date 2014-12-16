@@ -167,10 +167,10 @@ constructBuildFile cookDir fp theLines =
           in case lowerCmd of
                "from" -> return $ Left "FROM command is not allowed in dockercook files"
                "add" ->
-                   do logWarn "ADD commands are only recommended in combination with PREPARE scripts."
+                   do logWarn "ADD commands are not recommended as the dependencies aren't tracked. Use PREPARE!"
                       action
                "copy" ->
-                   do logWarn "COPY commands are not recommended as the dependencies aren't tracked."
+                   do logWarn "COPY commands are not recommended as the dependencies aren't tracked. Use PREPARE!"
                       action
                _ -> action
       baseCheck base onSuccess =

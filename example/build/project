@@ -1,5 +1,8 @@
 BASE COOK node
+PREPARE wget factisresearch.com
 INCLUDE *.js
 INCLUDE static/*
 UNPACK /src
+RUN mv /_cookpreps/index.html /index.html
+RUN ls -alh index.html
 RUN jshint /src/hello.js
