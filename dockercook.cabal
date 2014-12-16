@@ -72,7 +72,7 @@ executable dockercook
                        dockercook,
                        filepath,
                        hslogger,
-                       optparse-applicative >=0.8,
+                       optparse-applicative >=0.11.0.1,
                        process
   hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures

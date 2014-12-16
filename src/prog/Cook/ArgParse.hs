@@ -53,7 +53,7 @@ cookEntryPointP_deprecated =
 
 cookFileDropP :: Parser Int
 cookFileDropP =
-    option $
+    option auto $
     long "cookfile-drop-chars" <>
     value 0 <>
     metavar "COUNT" <>
@@ -61,7 +61,7 @@ cookFileDropP =
 
 cookVerboseP :: Parser Int
 cookVerboseP =
-    option $
+    option auto $
     long "verbosity" <>
     short 'v' <>
     metavar "INT" <>
