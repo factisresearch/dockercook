@@ -20,7 +20,7 @@ Available options:
 
 Available commands:
   cook                     Cook docker images
-  parse                    Parse the given file
+  check                    Validate a Dockercook file
   sync                     Sync local state with remote docker server
   version                  Show programs version
   init                     Enable dockercook for current project / directory
