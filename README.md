@@ -196,6 +196,10 @@ Most other docker-commands are allowed in Cookfiles. `ADD` and `COPY`
 commands are not recommended, as the dependencies aren't tracked. The
 `FROM` command is allowed.
 
+# Emacs support
+
+There's a basic `cookfile-mode.el` in the repository :-)
+
 # Related work
 
 * [docker-buildcache](https://github.com/baremetal/docker-buildcache)
