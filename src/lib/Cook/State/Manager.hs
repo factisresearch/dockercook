@@ -80,7 +80,7 @@ createStateManager stateDirectory =
        pool <- runNoLoggingT $ createSqlitePool (T.pack sqlLoc) 5
        let runSql action =
                let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
-               in (recoverAll (exponentialBackoff 500000 <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
+               in (recoverAll (constantDelay microsec <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
                     fail $ "Sqlite-Transaction finally failed: " ++ show e
        runSql (runMigration migrateState)
        sqlQueue <- newTBQueueIO 100
@@ -121,6 +121,8 @@ createStateManager stateDirectory =
                }
        return (stateMgr, hashMgr)
     where
+      microsec =
+          12 * 1000 * 1000
       sqlLoc = stateDirectory </> "database.db"
       queueWorker runSql queue =
           do action <- atomically $ readTBQueue queue

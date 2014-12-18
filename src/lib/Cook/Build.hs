@@ -113,25 +113,26 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, hash)
 
-runPrepareCommands tempDir bf streamHook =
+runPrepareCommands tempDir prepareDir bf streamHook =
     do logDebug "Running PREPARE commands"
        let outTar = "_dc_prepared.tar.gz"
-       withSystemTempDirectory "cookprepareXXX" $ \prepareDir ->
-           do initDirSt <- getDirectoryContents prepareDir
-              forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->
-                  do ec <- systemStream (Just prepareDir) cmd streamHook
-                     unless (ec == ExitSuccess) (fail $ "Preparation command failed: " ++ cmd)
-              generated <- getDirectoryContents prepareDir
-              let fileCount = (length generated) - (length initDirSt)
-              when (not $ V.null $ bf_prepare bf) $
-                   logInfo ("Prepare generated " ++ (show fileCount) ++ " files")
-              if fileCount <= 0
-              then return (Nothing, quickHash ["no-prepare"])
-              else do hashes <-
-                          runResourceT $! sourceDirectoryDeep' False (const $ return True) (FP.decodeString prepareDir)
-                          =$= C.concatMapM computeHash $$ C.sinkList
-                      compressFilesInDir (tempDir </> outTar) prepareDir ["."]
-                      return $ (Just outTar, concatHash hashes)
+       initDirSt <- getDirectoryContents prepareDir
+       forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->
+           do ec <- systemStream (Just prepareDir) cmd streamHook
+              unless (ec == ExitSuccess) (fail $ "Preparation command failed: " ++ cmd)
+       generated <- getDirectoryContents prepareDir
+       let fileCount = (length generated) - (length initDirSt)
+       when (not $ V.null $ bf_prepare bf) $
+            logInfo ("Prepare generated " ++ (show fileCount) ++ " files")
+       if fileCount <= 0
+       then return (Nothing, return (), quickHash ["no-prepare"])
+       else do hashes <-
+                   runResourceT $! sourceDirectoryDeep' False (const $ return True) (FP.decodeString prepareDir)
+                       =$= C.concatMapM computeHash $$ C.sinkList
+               let buildPrepareTar =
+                       do logDebug "Actually compressing the tar dir"
+                          compressFilesInDir True (tempDir </> outTar) prepareDir ["."]
+               return $ (Just outTar, buildPrepareTar, concatHash hashes)
     where
       computeHash fp =
           do bs <- C.sourceFile fp $$ C.sinkList
@@ -144,6 +145,7 @@ buildImage :: D.DockerImagesCache
            -> Uploader -> BuildFile -> IO DockerImage
 buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader bf =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
+    withSystemTempDirectory "cookprepareXXX" $ \prepareDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
@@ -164,7 +166,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
-       (mTar, prepareHash) <- runPrepareCommands buildTempDir bf streamHook
+       (mTar, mkPrepareTar, prepareHash) <- runPrepareCommands buildTempDir prepareDir bf streamHook
        let (copyPreparedTar, cleanupCmds) =
                case mTar of
                  Just preparedTar ->
@@ -228,6 +230,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                                      ++ ")"
                                     )
                    unless (cc_forceRebuild) $ logDebug' "Image not found!"
+                   mkPrepareTar
                    x <- launchImageBuilder dockerBS imageName buildTempDir
                    mTag <- markImage
                    announceBegin
@@ -293,7 +296,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                False ->
                    do
                       let includedFiles = map (FP.encodeString . localName . fst) targetedFiles
-                      compressFilesInDir contextPkg cc_dataDir includedFiles
+                      compressFilesInDir False contextPkg cc_dataDir includedFiles
                       currentDir <- getCurrentDirectory
                       let includedFilesFull = map (FP.encodeString . fst) targetedFiles
                       forM_ includedFilesFull $ \f ->

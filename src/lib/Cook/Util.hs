@@ -4,6 +4,7 @@ import Cook.Types
 
 import Control.Monad
 import Control.Monad.Trans
+import Control.Retry
 import System.Exit
 import System.IO
 import System.Log.Formatter
@@ -50,11 +51,20 @@ systemStream mDir cmd _onOutput =
     in do logDebug ("$ " ++ realCmd)
           system realCmd
 
-compressFilesInDir :: FilePath -> FilePath -> [FilePath] -> IO ()
-compressFilesInDir tarName dirFp files =
-    do ecTar <- rawSystem tarCmd tarArgs
+compressFilesInDir :: Bool -> FilePath -> FilePath -> [FilePath] -> IO ()
+compressFilesInDir shouldRetry tarName dirFp files =
+    do ecTar <-
+           retrying (constantDelay microsec <> limitRetries 5) checkRetry sysAction
        unless (ecTar == ExitSuccess) $
           fail ("Error creating tar:\n" ++ tarCmd ++ " " ++ unwords tarArgs)
     where
-      tarCmd = "/usr/bin/env"
-      tarArgs = ["tar", "cjf", tarName, "-C", dirFp] ++ files
+      microsec =
+          12 * 1000 * 1000
+      checkRetry _ ec =
+          return (shouldRetry && ec /= ExitSuccess)
+      sysAction =
+          rawSystem tarCmd tarArgs
+      tarCmd =
+          "/usr/bin/env"
+      tarArgs =
+          ["tar", "cjf", tarName, "-C", dirFp] ++ files

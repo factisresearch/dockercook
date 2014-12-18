@@ -118,7 +118,7 @@ buildTxScripts dockerFileEnvDir bf =
                   return (f, T.encodeUtf8 sh)
            case (null txSh) of
              False ->
-                 do compressFilesInDir tarFile txDir (map fst txSh)
+                 do compressFilesInDir False tarFile txDir (map fst txSh)
                     return ( V.concat [pre, V.map mkTxLine (bf_dockerCommands bf), post]
                            , if null txSh then quickHash ["no-tx"] else quickHash (map snd txSh)
                            )
