@@ -3,7 +3,12 @@ dockercook
 
 [![Build Status](https://travis-ci.org/factisresearch/dockercook.svg)](https://travis-ci.org/factisresearch/dockercook)
 
+Build and manage multiple docker image layers to speed up deployment. For
+a tutorial see below.
+
 # Install
+
+Requirements: GHC7.6 or GHC7.8 and cabal
 
 * From Hackage: `cabal install dockercook`
 * From Source: `git clone https://github.com/factisresearch/dockercook.git && cd dockercook && cabal install`
@@ -25,6 +30,70 @@ Available commands:
   version                  Show programs version
   init                     Enable dockercook for current project / directory
 ```
+
+# Cookfile Directives
+
+## BASE COOK [cookfile]
+
+Define the current cookfiles parent cookfile. You can only use this
+directive once at the top and you can't use it in combination with `BASE
+DOCKER [dockerimage]`.
+
+## BASE DOCKER [dockerimage]
+
+The cook-image will depend on an existing docker image. You can only use this
+directive once at the top and you can't use it in combination with `BASE
+DOCKER [dockerimage]`.
+
+## INCLUDE [filepattern]
+
+Include and depend on a file. You can use this anywhere in your cook file,
+but it will be moved to the top before `UNPACK [target_dir]`.
+
+## UNPACK [target_dir]
+
+All included files will be unpacked to this directory. It will also ensure
+that the directory exists. Requires a tar binary inside your
+docker-container. You can only use this directive once.
+
+## BEGIN
+
+Begin a transaction. You can only put `SCRIPT [script]` and `RUN
+[bash_cmd]` commands inside a transaction. All commands inside the
+transaction will result in a single layer.
+
+## COMMIT
+
+Commit a transaction. This is only possible if you began a transaction ;-)
+
+## SCRIPT [script]
+
+Run a bash script and put it's result at the current position in the
+dockerfile.
+
+## DOWNLOAD [url] [filepath]
+
+Download a file from `[url]` to `[filepath]` in your docker
+container. The server must set one of the following headers and support
+HEAD requests: Last-Modified, ETag, Content-MD5
+
+## PREPARE [shell-command]
+
+This shell command is executed in an empty directory and is useful to copy
+additional files into the build context. Any file that you copy in the
+working directory of the shell-command will be available in your cook file
+from the `/_cookpreps` directory. All `PREPARE` commands in one file will be
+executed in the same preparation directory. For more information check the example.
+
+## All Docker-Commands
+
+Most other docker-commands are allowed in Cookfiles. `ADD` and `COPY`
+commands are not recommended, as the dependencies aren't tracked. The
+`FROM` command is not allowed.
+
+# Emacs support
+
+There's a basic `cookfile-mode.el` in the repository :-)
 
 # Motivation / Tutorial
 
@@ -141,70 +210,6 @@ You'll notice the following behaviour:
 * build branch B (builds: -)
 
 Lot's of time is saved because you don't need to reinstall all your packages dependencies everytime you switch branches.
-
-# Cookfile Directives
-
-## BASE COOK [cookfile]
-
-Define the current cookfiles parent cookfile. You can only use this
-directive once at the top and you can't use it in combination with `BASE
-DOCKER [dockerimage]`.
-
-## BASE DOCKER [dockerimage]
-
-The cook-image will depend on an existing docker image. You can only use this
-directive once at the top and you can't use it in combination with `BASE
-DOCKER [dockerimage]`.
-
-## INCLUDE [filepattern]
-
-Include and depend on a file. You can use this anywhere in your cook file,
-but it will be moved to the top before `UNPACK [target_dir]`.
-
-## UNPACK [target_dir]
-
-All included files will be unpacked to this directory. It will also ensure
-that the directory exists. Requires a tar binary inside your
-docker-container. You can only use this directive once.
-
-## BEGIN
-
-Begin a transaction. You can only put `SCRIPT [script]` and `RUN
-[bash_cmd]` commands inside a transaction. All commands inside the
-transaction will result in a single layer.
-
-## COMMIT
-
-Commit a transaction. This is only possible if you began a transaction ;-)
-
-## SCRIPT [script]
-
-Run a bash script and put it's result at the current position in the
-dockerfile.
-
-## DOWNLOAD [url] [filepath]
-
-Download a file from `[url]` to `[filepath]` in your docker
-container. The server must set one of the following headers and support
-HEAD requests: Last-Modified, ETag, Content-MD5
-
-## PREPARE [shell-command]
-
-This shell command is executed in an empty directory and is useful to copy
-additional files into the build context. Any file that you copy in the
-working directory of the shell-command will be available in your cook file
-from the `/_cookpreps` directory. All `PREPARE` commands in one file will be
-executed in the same preparation directory. For more information check the example.
-
-## All Docker-Commands
-
-Most other docker-commands are allowed in Cookfiles. `ADD` and `COPY`
-commands are not recommended, as the dependencies aren't tracked. The
-`FROM` command is allowed.
-
-# Emacs support
-
-There's a basic `cookfile-mode.el` in the repository :-)
 
 # Related work
 
