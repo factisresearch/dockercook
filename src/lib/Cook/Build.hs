@@ -11,6 +11,7 @@ import Cook.State.Manager
 import Cook.Types
 import Cook.Uploader
 import Cook.Util
+import Cook.Downloads
 import qualified Cook.Docker as D
 
 import Control.Monad
@@ -167,6 +168,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
        (mTar, mkPrepareTar, prepareHash) <- runPrepareCommands buildTempDir prepareDir bf streamHook
+       downloadHashes <- mapM getUrlHash (V.toList $ bf_downloadDeps bf)
        let (copyPreparedTar, cleanupCmds) =
                case mTar of
                  Just preparedTar ->
@@ -194,7 +196,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
            buildFileHash = quickHash [BSC.pack (show $ bf { bf_name = BuildFileId "static" })]
            superHash =
                B16.encode $ unSha1 $
-               concatHash (prepareHash : txHashes : dockerHash : buildFileHash : allFHashes)
+               concatHash (prepareHash : txHashes : dockerHash : buildFileHash : (allFHashes ++ downloadHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
            imageTag = T.unpack $ unDockerImage imageName
        logDebug $ "Include files: " ++ (show $ length targetedFiles)

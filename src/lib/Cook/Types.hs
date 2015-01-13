@@ -5,6 +5,10 @@ import Data.Hashable
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
+newtype DownloadUrl
+    = DownloadUrl { unDownloadUrl :: T.Text }
+    deriving (Show, Eq, Hashable)
+
 data CookConfig
    = CookConfig
    { cc_dataDir :: FilePath

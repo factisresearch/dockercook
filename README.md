@@ -182,6 +182,12 @@ Commit a transaction. This is only possible if you began a transaction ;-)
 Run a bash script and put it's result at the current position in the
 dockerfile.
 
+## DOWNLOAD [url] [filepath]
+
+Download a file from `[url]` to `[filepath]` in your docker
+container. The server must set one of the following headers and support
+HEAD requests: Last-Modified, ETag, Content-MD5
+
 ## PREPARE [shell-command]
 
 This shell command is executed in an empty directory and is useful to copy

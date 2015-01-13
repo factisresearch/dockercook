@@ -48,6 +48,7 @@ data BuildFile
    , bf_dockerCommands :: V.Vector (Either TxRef DockerCommand)
    , bf_include :: V.Vector FilePattern
    , bf_prepare :: V.Vector T.Text
+   , bf_downloadDeps :: V.Vector DownloadUrl
    , bf_transactions :: HM.HashMap TxRef (V.Vector T.Text)
    } deriving (Show, Eq)
 
@@ -64,6 +65,7 @@ data BuildFileLine
    | ScriptLine FilePath (Maybe T.Text)  -- execute a script in cook directory to generate more cook commands
    | BeginTxLine
    | CommitTxLine
+   | DownloadLine DownloadUrl FilePath  -- download a file to a location
    | DockerLine DockerCommand   -- regular docker command
    deriving (Show, Eq)
 
@@ -158,10 +160,21 @@ constructBuildFile :: FilePath -> FilePath -> [BuildFileLine] -> IO (Either Stri
 constructBuildFile cookDir fp theLines =
     case baseLine of
       Just (BaseLine base) ->
-          baseCheck base $ handleLine (Right $ BuildFile myId base Nothing V.empty V.empty V.empty HM.empty) Nothing theLines
+          baseCheck base $ handleLine (Right (initBuildFile base)) Nothing theLines
       _ ->
           return $ Left "Missing BASE line!"
     where
+      initBuildFile base =
+          BuildFile
+          { bf_name = myId
+          , bf_base = base
+          , bf_unpackTarget = Nothing
+          , bf_dockerCommands = V.empty
+          , bf_include = V.empty
+          , bf_prepare = V.empty
+          , bf_downloadDeps = V.empty
+          , bf_transactions = HM.empty
+          }
       checkDocker (DockerCommand cmd _) action =
           let lowerCmd = T.toLower cmd
           in case lowerCmd of
@@ -206,6 +219,8 @@ constructBuildFile cookDir fp theLines =
                        _ -> return $ Left "Only RUN and SCRIPT commands are allowed in transactions"
                   Nothing ->
                      case line of
+                       DownloadLine url target ->
+                           handleLine (downloadLine url target buildFile) inTx rest
                        ScriptLine scriptLoc mArgs ->
                            handleScriptLine scriptLoc mArgs buildFile inTx rest
                        DockerLine dockerCmd ->
@@ -225,6 +240,14 @@ constructBuildFile cookDir fp theLines =
                            return $ Left "COMMIT is missing a BEGIN!"
                        _ ->
                            handleLine mBuildFile inTx rest
+      downloadLine url@(DownloadUrl realUrl) target buildFile =
+          Right $
+          buildFile
+          { bf_downloadDeps = V.snoc (bf_downloadDeps buildFile) url
+          , bf_dockerCommands =
+              V.snoc (bf_dockerCommands buildFile) $
+               Right (DockerCommand "ADD" (T.concat [realUrl, " ", T.pack target]))
+          }
       handleScriptLine scriptLoc mArgs buildFile inTx rest =
           do let bashCmd = (cookDir </> scriptLoc) ++ " " ++ T.unpack (fromMaybe "" mArgs)
              (ec, stdOut, stdErr) <-
@@ -287,6 +310,7 @@ pBuildFile =
           (pScriptLine <* finish) <|>
           BeginTxLine <$ (pBeginTx <* finish) <|>
           CommitTxLine <$ (pCommitTx <* finish) <|>
+          (pDownloadLine <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
 
 pBeginTx :: Parser ()
@@ -323,6 +347,11 @@ pComment =
 pIncludeLine :: Parser FilePattern
 pIncludeLine =
     (asciiCI "INCLUDE" *> skipSpace) *> pFilePattern
+
+pDownloadLine :: Parser BuildFileLine
+pDownloadLine =
+    DownloadLine <$> (DownloadUrl <$> ((asciiCI "DOWNLOAD" *> skipSpace) *> (takeWhile1 (not . isSpace))))
+                 <*> (T.unpack <$> takeWhile1 (not . eolOrComment))
 
 pScriptLine :: Parser BuildFileLine
 pScriptLine =
