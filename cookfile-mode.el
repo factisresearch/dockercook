@@ -12,7 +12,7 @@
 
 (defvar cook-keywords '("INCLUDE" "UNPACK" "BASE COOK" "BASE DOCKER" "RUN" "CMD" "EXPOSE" "ENV"
                         "ADD" "ENTRYPOINT" "VOLUME" "USER" "WORKDIR" "COPY" "PREPARE" "SCRIPT"
-                        "BEGIN" "COMMIT"))
+                        "BEGIN" "COMMIT" "DOWNLOAD"))
 
 (defvar cook-keywords-regexp
   (concat "^\\s-*" (regexp-opt cook-keywords 'words)))
