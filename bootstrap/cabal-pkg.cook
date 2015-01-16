@@ -1,0 +1,5 @@
+BASE COOK ghc.cook
+INCLUDE dockercook.cabal
+UNPACK /cook
+WORKDIR /cook
+RUN cabal update && cabal install -j8 --only-dep
