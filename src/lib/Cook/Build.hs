@@ -333,7 +333,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              logDebug' ("Building " ++ name ++ "...")
              let tag = T.unpack $ unDockerImage imageName
-             ecDocker <- systemStream Nothing ("docker build --rm -t " ++ tag ++ " " ++ tempDir) streamHook
+             ecDocker <- systemStream Nothing ("docker build --no-cache --force-rm --rm -t " ++ tag ++ " " ++ tempDir) streamHook
              if ecDocker == ExitSuccess
                then return imageName
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
