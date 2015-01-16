@@ -50,6 +50,7 @@ data BuildFile
    , bf_prepare :: V.Vector T.Text
    , bf_downloadDeps :: V.Vector DownloadUrl
    , bf_transactions :: HM.HashMap TxRef (V.Vector T.Text)
+   , bf_cookCopy :: HM.HashMap FilePath [(FilePath, FilePath)]
    } deriving (Show, Eq)
 
 data BuildBase
@@ -66,6 +67,7 @@ data BuildFileLine
    | BeginTxLine
    | CommitTxLine
    | DownloadLine DownloadUrl FilePath  -- download a file to a location
+   | CookCopyLine FilePath FilePath FilePath -- copy a file or folder from a cook-image to the _cookprep folder
    | DockerLine DockerCommand   -- regular docker command
    deriving (Show, Eq)
 
@@ -174,6 +176,7 @@ constructBuildFile cookDir fp theLines =
           , bf_prepare = V.empty
           , bf_downloadDeps = V.empty
           , bf_transactions = HM.empty
+          , bf_cookCopy = HM.empty
           }
       checkDocker (DockerCommand cmd _) action =
           let lowerCmd = T.toLower cmd
@@ -219,6 +222,8 @@ constructBuildFile cookDir fp theLines =
                        _ -> return $ Left "Only RUN and SCRIPT commands are allowed in transactions"
                   Nothing ->
                      case line of
+                       CookCopyLine cookFile containerPath hostPath ->
+                           handleLine (cookCopyLine cookFile containerPath hostPath buildFile) inTx rest
                        DownloadLine url target ->
                            handleLine (downloadLine url target buildFile) inTx rest
                        ScriptLine scriptLoc mArgs ->
@@ -240,6 +245,12 @@ constructBuildFile cookDir fp theLines =
                            return $ Left "COMMIT is missing a BEGIN!"
                        _ ->
                            handleLine mBuildFile inTx rest
+      cookCopyLine cookFile containerPath hostPath buildFile =
+          Right $
+          buildFile
+          { bf_cookCopy =
+                HM.insertWith (\new old -> new ++ old) cookFile [(containerPath, hostPath)] (bf_cookCopy buildFile)
+          }
       downloadLine url@(DownloadUrl realUrl) target buildFile =
           Right $
           buildFile
@@ -311,6 +322,7 @@ pBuildFile =
           BeginTxLine <$ (pBeginTx <* finish) <|>
           CommitTxLine <$ (pCommitTx <* finish) <|>
           (pDownloadLine <* finish) <|>
+          (pCookCopyLine <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
 
 pBeginTx :: Parser ()
@@ -340,6 +352,10 @@ eolOrComment :: Char -> Bool
 eolOrComment x =
     isEndOfLine x || x == '#'
 
+eolOrCommentOrSpace :: Char -> Bool
+eolOrCommentOrSpace x =
+    isEndOfLine x || x == '#' || isSpace x
+
 pComment :: Parser ()
 pComment =
     skipSpace <* optional (char '#' *> skipWhile (not . isEndOfLine))
@@ -351,7 +367,13 @@ pIncludeLine =
 pDownloadLine :: Parser BuildFileLine
 pDownloadLine =
     DownloadLine <$> (DownloadUrl <$> ((asciiCI "DOWNLOAD" *> skipSpace) *> (takeWhile1 (not . isSpace))))
-                 <*> (T.unpack <$> takeWhile1 (not . eolOrComment))
+                 <*> (T.unpack <$> (skipSpace *> takeWhile1 (not . eolOrCommentOrSpace)))
+
+pCookCopyLine :: Parser BuildFileLine
+pCookCopyLine =
+    CookCopyLine <$> ((asciiCI "COOKCOPY" *> skipSpace) *> (T.unpack <$> takeWhile1 isValidFileNameChar))
+                 <*> (T.unpack <$> (skipSpace *> takeWhile1 isValidFileNameChar))
+                 <*> (T.unpack <$> (skipSpace *> takeWhile1 isValidFileNameChar))
 
 pScriptLine :: Parser BuildFileLine
 pScriptLine =

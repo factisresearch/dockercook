@@ -15,6 +15,7 @@ import Cook.Downloads
 import qualified Cook.Docker as D
 
 import Control.Monad
+import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Conduit
@@ -26,6 +27,7 @@ import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
+import qualified Data.HashMap.Strict as HM
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
@@ -114,13 +116,17 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, hash)
 
-runPrepareCommands tempDir prepareDir bf streamHook =
+runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
     do logDebug "Running PREPARE commands"
        let outTar = "_dc_prepared.tar.gz"
        initDirSt <- getDirectoryContents prepareDir
        forM_ (V.toList $ bf_prepare bf) $ \(T.unpack -> cmd) ->
            do ec <- systemStream (Just prepareDir) cmd streamHook
               unless (ec == ExitSuccess) (fail $ "Preparation command failed: " ++ cmd)
+       forM_ cookCopyHm $ \(dockerImage, filesToCopy) ->
+           bracket (D.dockerRunForCopy dockerImage) (D.dockerRm True) $ \ct ->
+           forM_ filesToCopy $ \(src, dst) ->
+                  D.dockerCp ct src (prepareDir </> dst)
        generated <- getDirectoryContents prepareDir
        let fileCount = (length generated) - (length initDirSt)
        when (not $ V.null $ bf_prepare bf) $
@@ -167,7 +173,13 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
-       (mTar, mkPrepareTar, prepareHash) <- runPrepareCommands buildTempDir prepareDir bf streamHook
+       cookCopyHm <-
+           forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
+               do cookPrep <- prepareEntryPoint cfg (BuildFileId $ T.pack cookFile)
+                  image <- buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader cookPrep
+                  return (image, files)
+       (mTar, mkPrepareTar, prepareHash) <-
+           runPrepareCommands buildTempDir prepareDir bf streamHook cookCopyHm
        downloadHashes <- mapM getUrlHash (V.toList $ bf_downloadDeps bf)
        let (copyPreparedTar, cleanupCmds) =
                case mTar of
