@@ -164,7 +164,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                     if baseExists
                     then do markUsingImage stateManager rootImage
                             return rootImage
-                    else do logDebug' $ "Downloading the root image " ++ show (unDockerImage rootImage) ++ "... "
+                    else do hPutStrLn stderr $ "Downloading the docker root image " ++ show (unDockerImage rootImage) ++ "... "
                             (ec, stdOut, stdErr) <-
                                 readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
