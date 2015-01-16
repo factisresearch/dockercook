@@ -15,7 +15,7 @@ import Cook.Downloads
 import qualified Cook.Docker as D
 
 import Control.Monad
-import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Conduit
 import Data.Maybe (fromMaybe, isJust)
