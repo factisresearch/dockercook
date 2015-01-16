@@ -365,7 +365,7 @@ cookBuild stateDir cfg@(CookConfig{..}) uploader mStreamHook =
        return res
     where
       parseBoring =
-          map (mkRegex . T.unpack) . filter (not . ("#" `T.isPrefixOf`) . T.strip) .  T.lines
+          map (mkRegex . T.unpack) . filter (not . T.null) . filter (not . ("#" `T.isPrefixOf`) . T.strip) . map T.strip .  T.lines
       isBoring boring fp =
           any (isJust . flip matchRegex (FP.encodeString fp)) boring
 
