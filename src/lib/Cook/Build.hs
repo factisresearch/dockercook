@@ -254,7 +254,12 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
       withRawImageId imageName action =
           do mImageId <- D.getImageId imageName
              case mImageId of
-               Nothing -> logWarn $ "Failed to get the raw image id of " ++ (T.unpack $ unDockerImage $ imageName)
+               Nothing ->
+                   do let errorMsg =
+                              "Failed to get the raw image id of " ++ (T.unpack $ unDockerImage $ imageName)
+                              ++ ". Did you run dockercook sync?"
+                      logWarn errorMsg
+                      error errorMsg
                Just imageId -> action imageId
       name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
       logDebug' m =

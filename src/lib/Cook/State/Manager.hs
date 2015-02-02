@@ -16,6 +16,7 @@ where
 import Cook.Util
 import Cook.State.Model
 import Cook.Types
+import qualified Cook.Docker as D
 
 import Control.Applicative
 import Control.Concurrent
@@ -224,16 +225,25 @@ hashManagerLookup (StateManager{..}) hashMapV hashWriteChan fullFilePath compute
              recomputeHash
 
 syncImages :: StateManager -> (DockerImage -> IO Bool) -> IO ()
-syncImages (StateManager{..}) imageStillExists =
+syncImages sm@(StateManager{..}) imageStillExists =
     do x <- sm_runSqlGet $ selectList [] []
        forM_ x $ \entity ->
            do let dockerImage = entityVal entity
                   name = dbDockerImageName dockerImage
               exists <- imageStillExists (DockerImage name)
-              unless exists $
-                 do logInfo ("The image " ++ T.unpack name
-                             ++ " doesn't exist on remote docker server. Removing it from local state.")
-                    sm_runSqlWrite $ delete (entityKey entity)
+              if exists
+              then do mRawId <- D.getImageId (DockerImage name)
+                      case mRawId of
+                        Nothing ->
+                            do logInfo ("The image " ++ T.unpack name
+                                        ++ " doesn't have a raw id on the docker host. Deleting it from local state")
+                               sm_runSqlWrite $ delete (entityKey entity)
+                        Just rawId ->
+                            do logInfo ("New raw id for " ++ T.unpack name ++ " is " ++ T.unpack (unDockerImageId rawId))
+                               setImageId sm (DockerImage name) rawId
+              else do logInfo ("The image " ++ T.unpack name
+                               ++ " doesn't exist on remote docker server. Removing it from local state.")
+                      sm_runSqlWrite $ delete (entityKey entity)
        sm_waitForWrites
 
 isImageKnown :: StateManager -> DockerImage -> IO Bool
