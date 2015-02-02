@@ -1,0 +1,6 @@
+BASE COOK cabal-pkg.cook
+INCLUDE src/*
+UNPACK /cook
+WORKDIR /cook
+RUN cabal configure
+RUN cabal build

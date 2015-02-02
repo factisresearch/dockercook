@@ -4,7 +4,7 @@ dockercook
 [![Build Status](https://travis-ci.org/factisresearch/dockercook.svg)](https://travis-ci.org/factisresearch/dockercook)
 
 Build and manage multiple docker image layers to speed up deployment. For
-a tutorial see below.
+a tutorial see below or the example directory.
 
 # Install
 
@@ -83,7 +83,15 @@ This shell command is executed in an empty directory and is useful to copy
 additional files into the build context. Any file that you copy in the
 working directory of the shell-command will be available in your cook file
 from the `/_cookpreps` directory. All `PREPARE` commands in one file will be
-executed in the same preparation directory. For more information check the example.
+executed in the same preparation directory. For more information check the
+example.
+
+## COOKCOPY [cookfile] [image-dir] [target-dir]
+
+Copy a file or directory from an image described by `[cookfile]` to
+`/_cookpreps/[target-dir]` in your current context. This can be very
+useful for binary-only containers. Behind the scenes this starts the
+image (entrypoint is set to `""`), uses `docker cp` to extract files and then kills the container.
 
 ## All Docker-Commands
 

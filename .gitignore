@@ -7,10 +7,7 @@ example/.kitchen
 # haskell
 dist
 cabal-dev
-*.o
-*.hi
-*.chi
-*.chs.h
+.kitchen
 .virtualenv
 .hsenv
 .cabal-sandbox/
@@ -22,19 +19,5 @@ cabal.config
 .AppleDouble
 .LSOverride
 
-# Icon must end with two \r
-Icon
-
-
-# Thumbnails
-._*
-
-# Files that might appear on external disk
-.Spotlight-V100
-.Trashes
-
-# Directories potentially created on remote AFP share
-.AppleDB
-.AppleDesktop
-Network Trash Folder
-Temporary Items
+# git?
+.git

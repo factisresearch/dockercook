@@ -5,13 +5,14 @@ import Cook.Types
 import Control.Monad
 import Control.Monad.Trans
 import Control.Retry
+import Data.List (intercalate)
 import System.Exit
 import System.IO
 import System.Log.Formatter
 import System.Log.Handler hiding (setLevel)
 import System.Log.Handler.Simple
 import System.Log.Logger
-import System.Process (system, rawSystem)
+import System.Process (system, rawSystem, readProcessWithExitCode)
 
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
@@ -41,6 +42,11 @@ logWarn = liftIO . warningM "cook"
 
 logError :: MonadIO m => String -> m ()
 logError = liftIO . errorM "cook"
+
+readProcessWithExitCode' :: String -> [String] -> String -> IO (ExitCode, String, String)
+readProcessWithExitCode' cmd args procIn =
+    do logDebug ("$ " ++ cmd ++ " " ++ intercalate " " args)
+       readProcessWithExitCode cmd args procIn
 
 systemStream :: Maybe FilePath -> String -> (BS.ByteString -> IO ()) -> IO ExitCode
 systemStream mDir cmd _onOutput =

@@ -1,0 +1,20 @@
+BASE COOK ubuntu.cook
+
+# Install ghc7.8.3
+BEGIN
+RUN wget -O ghc.tar.bz2 http://www.haskell.org/ghc/dist/7.8.3/ghc-7.8.3-x86_64-unknown-linux-deb7.tar.bz2
+RUN tar xvfj ghc.tar.bz2
+RUN cd ghc-7.8.3 && ./configure
+RUN cd ghc-7.8.3 && make install
+RUN rm -rf ghc.tar.bz2 ghc-7.8.3
+COMMIT
+
+# Install cabal1.22.0.0
+DOWNLOAD https://hackage.haskell.org/package/cabal-install-1.22.0.0/cabal-install-1.22.0.0.tar.gz /cabal-install-1.22.0.0.tar.gz
+BEGIN
+RUN tar xvfz /cabal-install-1.22.0.0.tar.gz
+RUN cd cabal-install-1.22.0.0 && ./bootstrap.sh
+RUN rm -rf /cabal-install-1.22.0.0.tar.gz
+COMMIT
+
+ENV PATH $HOME/.cabal/bin:$PATH
