@@ -33,7 +33,7 @@ getImageId (DockerImage imageName) =
 
 tagImage :: DockerImageId -> DockerImage -> IO ()
 tagImage (DockerImageId imageId) (DockerImage imageTag) =
-    do (ec, _, _) <- readProcessWithExitCode' "docker" ["tag", T.unpack imageId, T.unpack imageTag] ""
+    do (ec, _, _) <- readProcessWithExitCode' "docker" ["tag", "-f", T.unpack imageId, T.unpack imageTag] ""
        if ec /= ExitSuccess
        then fail $ "Failed to tag image " ++ show imageId
        else return ()
