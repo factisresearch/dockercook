@@ -222,7 +222,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
            markImage =
                do markUsingImage stateManager imageName
                   T.forM mUserTagName $ \userTag ->
-                      do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ userTag) streamHook
+                      do _ <- systemStream Nothing ("docker tag -f " ++ imageTag ++ " " ++ userTag) streamHook
                          return (DockerImage $ T.pack userTag)
            announceBegin =
                hPutStr stderr (name ++ "... \t\t")
