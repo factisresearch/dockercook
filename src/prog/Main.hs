@@ -55,8 +55,8 @@ runProg' cmd =
       CookSync ->
           do stateDir <- findStateDirectory
              runSync stateDir
-      CookParse file ->
-          cookParse file
+      CookParse files ->
+          mapM_ cookParse files
       CookVersion ->
           putStrLn ("dockercook " ++ showVersion version)
       CookInit ->

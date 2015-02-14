@@ -77,7 +77,7 @@ makeDirectoryFileHashTable :: HashManager -> (FP.FilePath -> Bool) -> FilePath -
 makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> root) =
     do currentDir <- getCurrentDirectory
        let fullRoot = currentDir </> FP.encodeString root
-       logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This will take some time..."
+       logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This could take some time..."
        x <- runResourceT $! sourceDirectoryDeep' False dirCheck root =$= C.concatMapM (hashFile fullRoot) $$ C.sinkList
        hPutStr stderr "\n"
        logDebug "Done hashing your repo!"
@@ -227,7 +227,10 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
                       do _ <- systemStream Nothing ("docker tag -f " ++ imageTag ++ " " ++ userTag) streamHook
                          return (DockerImage $ T.pack userTag)
            announceBegin =
-               hPutStr stderr (name ++ "... \t\t")
+               do let move = 30 - length name
+                  if move < 2
+                  then hPutStr stderr (name ++ "... \n" ++ replicate 30 ' ')
+                  else hPutStr stderr (name ++ "... " ++ replicate move ' ')
            tagInfo =
                fromMaybe "" $ fmap (\userTag -> " --> " ++ userTag) mUserTagName
            nameTagArrow =
