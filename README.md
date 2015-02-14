@@ -202,11 +202,11 @@ $ cd $HOME/my-repo
 $ dockercook init # only the first time
 $ git checkout branchA
 ...
-$ dockercook cook --state /tmp/build-state --data $HOME/my-repo --buildfiles $HOME/my-repo/cookfiles --entrypoint app.cook
+$ dockercook cook cookfiles/app.cook
 ...
 $ cd $HOME/my-repo && git checkout branchB
 ...
-$ dockercook cook --state /tmp/build-state --data $HOME/my-repo --buildfiles $HOME/my-repo/cookfiles --entrypoint app.cook
+$ dockercook cook cookfiles/app.cook
 ```
 You'll notice the following behaviour:
 
