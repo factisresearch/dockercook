@@ -27,30 +27,6 @@ cookTagP =
     metavar "TAG-PREFIX" <>
     help "Additionally tag docker images with this prefix"
 
-cookDataP =
-    strOption $
-    long "data" <>
-    short 'd' <>
-    metavar "DIRECTORY" <>
-    value "." <>
-    help "Directory where to find INCLUDED files"
-
-cookBuildP =
-    strOption $
-    long "buildfiles" <>
-    short 'b' <>
-    metavar "DIRECTORY" <>
-    value "." <>
-    help "Directory of dockercook files"
-
-
-cookEntryPointP_deprecated =
-    strOption $
-    long "entrypoint" <>
-    short 'p' <>
-    metavar "COOKFILE" <>
-    help "Cookfile to be built"
-
 cookFileDropP :: Parser Int
 cookFileDropP =
     option auto $
@@ -75,15 +51,12 @@ cookBoringP =
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
-    (CookConfig <$> cookDataP
-                <*> cookBuildP
-                <*> cookBoringP
+    (CookConfig <$> cookBoringP
                 <*> cookTagP
                 <*> cookFileDropP
                 <*> (switch (long "push" <> help "Push built docker containers"))
                 <*> (switch (long "force-rebuild" <> help "Rebuild all docker images regardless of dependency changes"))
-                <*> ((++) <$> many cookEntryPointP_deprecated
-                          <*> many (argument str (metavar "COOKFILE"))))
+                <*> (many (argument str (metavar "COOKFILE"))))
 
 cookSync :: Parser CookCmd
 cookSync = pure CookSync

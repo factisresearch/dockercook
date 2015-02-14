@@ -16,6 +16,7 @@ import Options.Applicative
 import System.Exit
 import System.Log
 import System.Directory
+import System.FilePath
 import System.Process
 
 runProg :: (Int, CookCmd) -> IO ()
@@ -42,7 +43,8 @@ runProg' cmd =
       CookBuild buildCfg ->
           do uploader <- mkUploader 100
              stateDir <- findStateDirectory
-             _ <- cookBuild stateDir buildCfg uploader Nothing
+             let rootDir = takeDirectory stateDir
+             _ <- cookBuild rootDir stateDir buildCfg uploader Nothing
              when (cc_autoPush buildCfg) $
                do logInfo $ "Waiting for all images to finish beeing pushed"
                   waitForCompletion uploader

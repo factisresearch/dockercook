@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Cook.BuildFile
     ( BuildFileId(..), BuildFile(..), BuildBase(..), DockerCommand(..), TxRef
+    , buildFileIdAddParent
     , dockerCmdToText
     , parseBuildFile
     , buildTxScripts, copyTarAndUnpack
@@ -35,6 +36,10 @@ import qualified Data.HashMap.Strict as HM
 newtype BuildFileId
     = BuildFileId { unBuildFileId :: T.Text }
     deriving (Show, Eq)
+
+buildFileIdAddParent :: FilePath -> BuildFileId -> BuildFileId
+buildFileIdAddParent fp (BuildFileId f) =
+    BuildFileId $ T.pack (fp </> T.unpack f)
 
 newtype TxRef
     = TxRef { _unTxRef :: Int }
@@ -284,18 +289,18 @@ constructBuildFile cookDir fp theLines =
                           }
                   handleLine (Right buildFile') (Just txRef) rest
 
-parseBuildFile :: CookConfig -> FilePath -> IO (Either String BuildFile)
-parseBuildFile cfg fp =
+parseBuildFile :: FilePath -> IO (Either String BuildFile)
+parseBuildFile fp =
     do t <- T.readFile fp
-       parseBuildFileText cfg fp t
+       parseBuildFileText fp t
 
-parseBuildFileText :: CookConfig -> FilePath -> T.Text -> IO (Either String BuildFile)
-parseBuildFileText cfg fp t =
+parseBuildFileText :: FilePath -> T.Text -> IO (Either String BuildFile)
+parseBuildFileText fp t =
     case parseOnly pBuildFile t of
       Left err ->
           return $ Left err
       Right theLines ->
-          constructBuildFile (cc_buildFileDir cfg) fp theLines
+          constructBuildFile (takeDirectory fp) fp theLines
 
 parseFilePattern :: T.Text -> Either String FilePattern
 parseFilePattern pattern =

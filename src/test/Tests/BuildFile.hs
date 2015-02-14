@@ -32,13 +32,12 @@ readDataFile name =
 
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
-    do let dummyCfg = dummyCookConfig
-       parsed1 <- parseBuildFileText dummyCfg "sample1" sampleFile1 >>= assertRight
-       parsed2 <- parseBuildFileText dummyCfg "sample1" sampleFile2 >>= assertRight
-       parsed3 <- parseBuildFileText dummyCfg "sample3" sampleFile3 >>= assertRight
-       parsed4 <- parseBuildFileText dummyCfg "sample3" sampleFile4 >>= assertRight
+    do parsed1 <- parseBuildFileText "sample1" sampleFile1 >>= assertRight
+       parsed2 <- parseBuildFileText "sample1" sampleFile2 >>= assertRight
+       parsed3 <- parseBuildFileText "sample3" sampleFile3 >>= assertRight
+       parsed4 <- parseBuildFileText "sample3" sampleFile4 >>= assertRight
        sampleFile5 <- readDataFile "test1.cook"
-       parsed5 <- parseBuildFileText dummyCfg "test1.cook" sampleFile5 >>= assertRight
+       parsed5 <- parseBuildFileText "test1.cook" sampleFile5 >>= assertRight
        assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
        assertEqual parsed1 parsed2
        assertEqual (BuildBaseCook $ BuildFileId "foo.build") (bf_base parsed3)

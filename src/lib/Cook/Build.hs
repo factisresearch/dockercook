@@ -14,6 +14,7 @@ import Cook.Util
 import Cook.Downloads
 import qualified Cook.Docker as D
 
+import Control.Applicative
 import Control.Monad
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
@@ -146,19 +147,20 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
              logDebug ("PREPARE: Hashing " ++ show fp)
              return $ [quickHash bs]
 
-buildImage :: D.DockerImagesCache
+buildImage :: FilePath
+           -> D.DockerImagesCache
            -> Maybe StreamHook
            -> CookConfig -> StateManager -> HashManager -> [(FP.FilePath, SHA1)]
-           -> Uploader -> BuildFile -> IO DockerImage
-buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader bf =
+           -> Uploader -> (BuildFile, FilePath) -> IO DockerImage
+buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader (bf, bfRootDir) =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
     withSystemTempDirectory "cookprepareXXX" $ \prepareDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
-                 do parent <- prepareEntryPoint cfg parentBuildFile
-                    buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader parent
+                 do parent <- prepareEntryPoint $ buildFileIdAddParent bfRootDir parentBuildFile
+                    buildImage rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader (parent, bfRootDir)
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
@@ -175,8 +177,8 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
        cookCopyHm <-
            forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
-               do cookPrep <- prepareEntryPoint cfg (BuildFileId $ T.pack cookFile)
-                  image <- buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader cookPrep
+               do cookPrep <- prepareEntryPoint (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cookFile)
+                  image <- buildImage rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader (cookPrep, bfRootDir)
                   return (image, files)
        (mTar, mkPrepareTar, prepareHash) <-
            runPrepareCommands buildTempDir prepareDir bf streamHook cookCopyHm
@@ -315,7 +317,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                False ->
                    do
                       let includedFiles = map (FP.encodeString . localName . fst) targetedFiles
-                      compressFilesInDir False contextPkg cc_dataDir includedFiles
+                      compressFilesInDir False contextPkg rootDir includedFiles
                       currentDir <- getCurrentDirectory
                       let includedFilesFull = map (FP.encodeString . fst) targetedFiles
                       forM_ includedFilesFull $ \f ->
@@ -348,23 +350,26 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                        _ <- systemStream Nothing ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
                        exitWith ecDocker
       localName fp =
-          case FP.stripPrefix (FP.decodeString $ fixTailingSlash cc_dataDir) fp of
-            Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ cc_dataDir)
+          case FP.stripPrefix (FP.decodeString $ fixTailingSlash rootDir) fp of
+            Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ rootDir)
             Just x -> x
       matchesFile fp pattern = matchesFilePattern pattern (FP.encodeString (localName fp))
       isNeededHash fp = or (map (matchesFile fp) (V.toList (bf_include bf)))
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) fileHashes
 
 
-cookBuild :: FilePath -> CookConfig -> Uploader -> Maybe StreamHook -> IO [DockerImage]
-cookBuild stateDir cfg@(CookConfig{..}) uploader mStreamHook =
+cookBuild :: FilePath -> FilePath -> CookConfig -> Uploader -> Maybe StreamHook -> IO [DockerImage]
+cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
     do (stateManager, hashManager) <- createStateManager stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
-       fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring)  cc_dataDir
+       fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring) rootDir
        roots <-
-           mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
+           mapM (\entryPointFile ->
+                     (,) <$> (prepareEntryPoint . BuildFileId . T.pack) entryPointFile
+                         <*> return (takeDirectory entryPointFile)
+                ) cc_buildEntryPoints
        imCache <- D.newDockerImagesCache
-       res <- mapM (buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
+       res <- mapM (buildImage rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
        waitForWrites stateManager
        logInfo "Finished building all required images!"
        return res
@@ -376,7 +381,7 @@ cookBuild stateDir cfg@(CookConfig{..}) uploader mStreamHook =
 
 cookParse :: FilePath -> IO ()
 cookParse fp =
-    do mRes <- parseBuildFile dummyCookConfig fp
+    do mRes <- parseBuildFile fp
        case mRes of
          Left errMsg ->
              fail ("Failed to parse cook file " ++ show fp ++ ": " ++ errMsg)
@@ -384,14 +389,12 @@ cookParse fp =
              do putStrLn $ ("Parsed " ++ show fp ++ ", content: " ++ show ep)
                 return ()
 
-prepareEntryPoint :: CookConfig -> BuildFileId -> IO BuildFile
-prepareEntryPoint cfg (BuildFileId entryPoint) =
-    do let buildFileDir = cc_buildFileDir cfg
-           n = buildFileDir </> (T.unpack entryPoint)
-       mRes <- parseBuildFile cfg n
+prepareEntryPoint :: BuildFileId -> IO BuildFile
+prepareEntryPoint (BuildFileId entryPoint) =
+    do mRes <- parseBuildFile (T.unpack entryPoint)
        case mRes of
          Left errMsg ->
-             error ("Failed to parse EntryPoint " ++ show n ++ ": " ++ errMsg)
+             error ("Failed to parse EntryPoint " ++ show entryPoint ++ ": " ++ errMsg)
          Right ep ->
-             do logDebug $ ("Parsed " ++ show n ++ ", content: " ++ show ep)
+             do logDebug $ ("Parsed " ++ show entryPoint ++ ", content: " ++ show ep)
                 return ep
