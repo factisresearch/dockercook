@@ -5,19 +5,11 @@ import Options.Applicative
 
 data CookCmd
    = CookBuild CookConfig
-   | CookParse FilePath
+   | CookParse [FilePath]
    | CookSync
    | CookVersion
    | CookInit
    deriving (Show, Eq)
-
-cookFileP =
-    strOption $
-    long "file" <>
-    short 'f' <>
-    metavar "FILE" <>
-    value "FILE" <>
-    help "File to parse"
 
 cookTagP =
     optional $
@@ -25,7 +17,7 @@ cookTagP =
     long "tag" <>
     short 't' <>
     metavar "TAG-PREFIX" <>
-    help "Additionally tag docker images with this prefix"
+    help "Tag resulting docker images with this prefix"
 
 cookDataP =
     strOption $
@@ -57,7 +49,7 @@ cookFileDropP =
     long "cookfile-drop-chars" <>
     value 0 <>
     metavar "COUNT" <>
-    help "drop this number of characters from each cook filename for tagging"
+    help "drop this number of characters from each cook filename before tagging"
 
 cookVerboseP :: Parser Int
 cookVerboseP =
@@ -72,6 +64,9 @@ cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
                            <> help "File with regex list of ignored files." )
 
+cookFilesP =
+    many (argument str (metavar "COOKFILE"))
+
 cookOptions :: Parser CookCmd
 cookOptions =
     CookBuild <$>
@@ -83,14 +78,14 @@ cookOptions =
                 <*> (switch (long "push" <> help "Push built docker containers"))
                 <*> (switch (long "force-rebuild" <> help "Rebuild all docker images regardless of dependency changes"))
                 <*> ((++) <$> many cookEntryPointP_deprecated
-                          <*> many (argument str (metavar "COOKFILE"))))
+                          <*> cookFilesP))
 
 cookSync :: Parser CookCmd
 cookSync = pure CookSync
 
 cookParse :: Parser CookCmd
 cookParse =
-    CookParse <$> cookFileP
+    CookParse <$> cookFilesP
 
 argParse :: Parser (Int, CookCmd)
 argParse =
