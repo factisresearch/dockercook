@@ -184,7 +184,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
        let (copyPreparedTar, cleanupCmds) =
                case mTar of
                  Just preparedTar ->
-                     ( V.fromList $ copyTarAndUnpack preparedTar "/_cookpreps"
+                     ( V.fromList $ copyTarAndUnpack OverwriteExisting preparedTar "/_cookpreps"
                      , V.fromList
                        [ DockerCommand "RUN" (T.pack $ "rm -rf /_cookpreps")
                        ]
@@ -196,7 +196,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                  (_, True) -> []
                  (Nothing, _) -> []
                  (Just target, _) ->
-                     copyTarAndUnpack "context.tar.gz" target
+                     copyTarAndUnpack SkipExisting "context.tar.gz" target
            dockerCommands =
                V.concat [contextAdd, copyPreparedTar, dockerCommandsBase, cleanupCmds]
            dockerBS =
