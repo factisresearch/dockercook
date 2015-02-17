@@ -150,7 +150,10 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
 buildImage :: FilePath
            -> D.DockerImagesCache
            -> Maybe StreamHook
-           -> CookConfig -> StateManager -> HashManager -> [(FP.FilePath, SHA1)]
+           -> CookConfig
+           -> StateManager
+           -> HashManager
+           -> [(FP.FilePath, SHA1)]
            -> Uploader -> (BuildFile, FilePath) -> IO DockerImage
 buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader (bf, bfRootDir) =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
@@ -186,7 +189,7 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
        let (copyPreparedTar, cleanupCmds) =
                case mTar of
                  Just preparedTar ->
-                     ( V.fromList $ copyTarAndUnpack preparedTar "/_cookpreps"
+                     ( V.fromList $ copyTarAndUnpack OverwriteExisting preparedTar "/_cookpreps"
                      , V.fromList
                        [ DockerCommand "RUN" (T.pack $ "rm -rf /_cookpreps")
                        ]
@@ -198,7 +201,7 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
                  (_, True) -> []
                  (Nothing, _) -> []
                  (Just target, _) ->
-                     copyTarAndUnpack "context.tar.gz" target
+                     copyTarAndUnpack SkipExisting "context.tar.gz" target
            dockerCommands =
                V.concat [contextAdd, copyPreparedTar, dockerCommandsBase, cleanupCmds]
            dockerBS =
