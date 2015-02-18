@@ -7,3 +7,4 @@ RUN npm install -g jshint
 COMMIT
 SCRIPT include-gen.sh
 RUN ln -s /usr/bin/nodejs /usr/bin/node
+# asd

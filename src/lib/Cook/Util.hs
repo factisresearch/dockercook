@@ -1,7 +1,5 @@
 module Cook.Util where
 
-import Cook.Types
-
 import Control.Monad
 import Control.Monad.Trans
 import Control.Retry
@@ -16,10 +14,22 @@ import System.Process (system, rawSystem, readProcessWithExitCode)
 
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+
+newtype SHA1 =
+    SHA1 { unSha1 :: BS.ByteString }
+    deriving (Show, Eq, Ord)
 
 quickHash :: [BS.ByteString] -> SHA1
 quickHash bsList =
     SHA1 $ SHA1.finalize (SHA1.updates SHA1.init bsList)
+
+quickHashText :: [T.Text] -> SHA1
+quickHashText = quickHash . map T.encodeUtf8
+
+quickHashString :: [String] -> SHA1
+quickHashString = quickHashText . map T.pack
 
 concatHash :: [SHA1] -> SHA1
 concatHash sha1List = quickHash $ map unSha1 sha1List

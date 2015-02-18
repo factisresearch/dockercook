@@ -42,10 +42,6 @@ data ErrorWarningOk
 newtype StreamHook =
     StreamHook { unStreamHook :: BS.ByteString -> IO () }
 
-newtype SHA1 =
-    SHA1 { unSha1 :: BS.ByteString }
-         deriving (Show, Eq)
-
 newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable)
