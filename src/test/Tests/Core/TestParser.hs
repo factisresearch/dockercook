@@ -9,7 +9,6 @@ import Cook.Docker.Types
 import Control.Applicative
 import Test.Framework
 import Text.Parsec (parse, eof)
-import qualified Data.Text as T
 
 testParser expect p i =
     do res <- assertRight $ parse (p <* eof) "test-input" i
@@ -74,6 +73,14 @@ test_parseCookCore =
        subAssert $ doTest (cc (CookParentDockerImage $ DockerImageName "ubuntu" Nothing) []) "BASE DOCKER ubuntu"
        subAssert $ doTest (cc (CookParentCookfile "cook/test.cook")
                                   [CommandCall (Command "RUN") ["echo"]]) "BASE COOK cook/test.cook\nRUN echo"
+       subAssert $ doTest (cc (CookParentCookfile "cook/test.cook")
+                                  [CommandCall (Command "USER") ["foo"]]) "BASE COOK cook/test.cook\nUSER foo\n"
+       subAssert $ doTest (cc (CookParentCookfile "cook/test.cook")
+                                  [CommandCall (Command "USER") ["foo"]]) "BASE COOK cook/test.cook\nUSER foo#asd\n"
+       subAssert $ doTest (cc (CookParentCookfile "cook/test.cook")
+                                  [CommandCall (Command "USER") ["foo"]]) "BASE COOK cook/test.cook\n# bazinga\nUSER foo#asd\n"
+       subAssert $ doTest (cc (CookParentCookfile "cook/test.cook")
+                                  [CommandCall (Command "USER") ["foo"]]) "BASE COOK cook/test.cook\nUSER foo\n     \t"
        subAssert $ testParserFail parseCookCore ""
        subAssert $ testParserFail parseCookCore " "
        subAssert $ testParserFail parseCookCore "BASE"

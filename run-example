@@ -2,4 +2,4 @@
 DOCKERCOOK=../dist/build/dockercook/dockercook
 cd example
 "$DOCKERCOOK" init
-"$DOCKERCOOK" cook -d repo/ -b build/ project
+"$DOCKERCOOK" cook build/project

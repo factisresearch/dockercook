@@ -31,8 +31,10 @@ library
                        Cook.Core.Runner,
                        Cook.Core.Compile,
                        Cook.Core.FileHasher,
+                       Cook.Core.Plugin,
                        Cook.Docker.Api,
-                       Cook.Docker.Types
+                       Cook.Docker.Types,
+                       Cook.Plugins.Transaction
   other-modules:
                        Cook.Docker,
                        Cook.State.Model

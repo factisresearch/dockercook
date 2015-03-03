@@ -41,7 +41,8 @@ parseCookCore =
        cookCommands <-
            optional $
            do _ <- endOfLine
-              parseCommandCall `sepBy` endOfLine
+              many (parseCommandCall <* ((endOfLine *> return ()) <|> eof))
+       _ <- optional spaces
        return $ CommandFile cookParent (fromMaybe [] cookCommands)
 
 parseImageName :: Parser DockerImageName
@@ -54,8 +55,8 @@ parseImageName =
               many1 (noneOf " \n\t#:")
        return $ DockerImageName (T.pack imageName) (fmap T.pack tagName)
 
-skipComments :: Parser ()
-skipComments =
+skipComments :: Bool -> Parser ()
+skipComments commentLine =
     do _ <- many (skp <?> "comment")
        return ()
     where
@@ -64,7 +65,7 @@ skipComments =
           do spaces
              _ <- char '#'
              _ <- many1 (noneOf "\n\r")
-             spaces
+             when commentLine spaces
              return ()
 
 parseString :: Parser String
@@ -94,13 +95,13 @@ parseArg =
 
 parseCommandCall :: Parser (CommandCall CCook)
 parseCommandCall =
-    do skipComments
+    do skipComments True
        cmd <- parseCommand
        args <-
            optional $
            do _ <- many1 (char ' ')
               cmdArg `sepBy` many1 (char ' ')
-       skipComments
+       skipComments False
        return $ CommandCall cmd (map T.pack $ fromMaybe [] args)
     where
       cmdArg =

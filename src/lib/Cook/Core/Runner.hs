@@ -9,12 +9,21 @@ import Cook.Core.Types
 import Cook.Docker.Types
 import Cook.Core.Compile
 import Cook.Core.Parser (parseCookFile)
+import Cook.Plugins.Transaction
 import qualified Cook.Core.FileHasher as FH
 
 import System.Directory
+import System.FilePath
 import Control.Monad
 import Data.Maybe
+import qualified Data.ByteString as BS
+import Control.Concurrent.STM
+import System.IO.Temp
+import Data.Monoid
+import Data.List (foldl')
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.CaseInsensitive as CI
 import qualified Data.Traversable as T
 import qualified Data.HashMap.Strict as HM
 
@@ -54,7 +63,7 @@ cookBuild opts hashManager =
                    do (cf', append) <-
                           case cf_parent cookFile of
                             CookParentCookfile parent ->
-                                do p <- canonicalizePath parent
+                                do p <- canonicalizePath (dropFileName file </> parent)
                                    let cookFile' =
                                            cookFile
                                            { cf_parent = CookParentCookfile p
@@ -77,16 +86,81 @@ launchBuilder env fileName =
                        launchBuilder env parent
                    CookParentDockerImage img ->
                        return img
-             let compilerIf =
-                     CompilerIf
-                     { ci_plugins = []
-                     , ci_listContext = []
-                     , ci_includeFile = undefined
-                     }
-             logInfo $ "Building " ++ show fileName
-             compilerOutput <-
-                 runCookM compilerIf (cf_commands cookFile) $
-                 do dependOn parentImage
-                    runPlugins
-             print compilerOutput
+             withSystemTempDirectory "buildctxXXX" $ \buildCtx ->
+                 do copyMap <- newTVarIO HM.empty
+                    let compilerIf =
+                            CompilerIf
+                            { ci_plugins = [wrapPlugin transactionPlugin]
+                            , ci_listContext = []
+                            , ci_includeFile = undefined
+                            , ci_writeFile = writeContainerFileImpl copyMap buildCtx
+                            }
+                    logInfo $ "Building " ++ show fileName
+                    compilerOutput <-
+                        runCookM compilerIf (cf_commands cookFile) $
+                        do dependOn parentImage
+                           runPlugins
+                    copyJobs <- atomically $ readTVar copyMap
+                    T.writeFile (buildCtx </> "relocate.sh") $ compileCopyMapScript copyJobs
+                    let tarName = "context.tar"
+                        tarContainerName = "/tmp/context.tar"
+                        tarUnpackDest = "/_cookctx"
+                        compilerOutput' =
+                            compilerOutput
+                            { co_commands =
+                                  ( CommandCall (Command "COPY") [tarName, tarContainerName]
+                                  : CommandCall (Command "RUN") [ "mkdir -p " <> tarUnpackDest
+                                                                , "&& /usr/bin/env tar xvk --overwrite -f " <> tarContainerName <> " -C " <> tarUnpackDest
+                                                                , "&& cd " <> tarUnpackDest
+                                                                , "&& /bin/bash ./relocate.sh"
+                                                                , "&& rm -rf " <> tarUnpackDest
+                                                                , "&& rm -rf " <> tarContainerName
+                                                                ]
+                                  : co_commands compilerOutput
+                                  )
+                            }
+                    print compilerOutput'
+                    T.putStrLn $ renderDockerCommands (co_commands compilerOutput')
+                    withSystemTempDirectory "dockerctxXXX" $ \dockerCtx ->
+                        do let filesToInclude =
+                                   ( "relocate.sh"
+                                   : (map (\sha -> T.unpack $ printHash sha) $ HM.keys copyJobs)
+                                   )
+                           compressFilesInDir True (dockerCtx </> "context.tar") buildCtx filesToInclude
+                           return ()
              undefined
+
+renderDockerCommands :: [CommandCall CDocker] -> T.Text
+renderDockerCommands cmds =
+    T.intercalate "\n" $ map renderCmd cmds
+    where
+      renderCmd (CommandCall (Command cmd) args) =
+          (CI.original cmd) <> " " <> T.intercalate " " args
+
+compileCopyMapScript :: HM.HashMap SHA1 [FilePath] -> T.Text
+compileCopyMapScript hm =
+    foldl' compileEntry scriptHead (HM.toList hm)
+    where
+      compileEntry script (fhash, targets) =
+          let fileName = printHash fhash
+              moveCommands =
+                  T.intercalate "\n" (map (\tgt -> "mv " <> fileName <> " " <> T.pack tgt) targets)
+          in script <> "\n" <> moveCommands
+      scriptHead =
+          T.unlines
+          [ "#!/bin/bash"
+          , "set -x"
+          , "set -e"
+          ]
+
+writeContainerFileImpl :: TVar (HM.HashMap SHA1 [FilePath]) -> FilePath -> FilePath -> BS.ByteString -> IO SHA1
+writeContainerFileImpl copyMapVar contextDir containerPath bs =
+    do let contentHash =
+               concatHash
+               [ quickHash [bs]
+               , quickHashString [containerPath]
+               ]
+           contextFileName = T.unpack (printHash contentHash)
+       BS.writeFile (contextDir </> contextFileName) bs
+       atomically $ modifyTVar copyMapVar $ HM.insertWith (++) contentHash [containerPath]
+       return contentHash

@@ -1,8 +1,10 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Cook.Util where
 
 import Control.Monad
 import Control.Monad.Trans
 import Control.Retry
+import Data.Hashable
 import Data.List (intercalate)
 import System.Exit
 import System.IO
@@ -14,12 +16,13 @@ import System.Process (system, rawSystem, readProcessWithExitCode)
 
 import qualified Crypto.Hash.SHA1 as SHA1
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Base16 as B16
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 
 newtype SHA1 =
     SHA1 { unSha1 :: BS.ByteString }
-    deriving (Show, Eq, Ord)
+    deriving (Show, Eq, Ord, Hashable)
 
 quickHash :: [BS.ByteString] -> SHA1
 quickHash bsList =
@@ -33,6 +36,9 @@ quickHashString = quickHashText . map T.pack
 
 concatHash :: [SHA1] -> SHA1
 concatHash sha1List = quickHash $ map unSha1 sha1List
+
+printHash :: SHA1 -> T.Text
+printHash = T.decodeUtf8 . B16.encode . unSha1
 
 initLoggingFramework :: Priority -> IO ()
 initLoggingFramework prio =

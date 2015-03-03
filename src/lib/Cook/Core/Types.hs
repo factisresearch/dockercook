@@ -50,3 +50,6 @@ data CookParent
 
 instance HasCommandFileParent CCook where
     type CommandFileParent CCook = CookParent
+
+instance HasCommandFileParent CDocker where
+    type CommandFileParent CDocker = DockerImageName

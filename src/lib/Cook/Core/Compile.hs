@@ -18,6 +18,7 @@ import Data.Monoid
 import Control.Monad.RWS
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.ByteString as BS
 import Data.Typeable
 import qualified Data.HashMap.Strict as HM
 import Data.Hashable
@@ -38,6 +39,7 @@ data CompilerIf
    = CompilerIf
    { ci_plugins :: [Plugin WrappedPluginState]
    , ci_listContext :: [FilePath]
+   , ci_writeFile :: FilePath -> BS.ByteString -> IO SHA1
    , ci_includeFile :: FilePath -> IO SHA1
    }
 
@@ -63,7 +65,7 @@ instance Monoid CompilerOutput where
 
 newtype CookM a
     = CookM { unCookM :: RWST CompilerIf CompilerOutput CompilerState IO a }
-      deriving (Monad, Functor, Applicative)
+      deriving (Monad, Functor, Applicative, MonadIO)
 
 runCookM :: CompilerIf -> [CommandCall CCook] -> CookM a -> IO CompilerOutput
 runCookM cif cmds actions =
@@ -99,6 +101,10 @@ includeFile fp =
              incF <- asks ci_includeFile
              liftIO $ incF fp
 
+getCommandStack :: CookM [CommandCall CCook]
+getCommandStack =
+    CookM $ gets cs_commands
+
 peekCommand :: CookM (Maybe (CommandCall CCook))
 peekCommand =
     CookM $
@@ -120,6 +126,12 @@ tellCommand :: CommandCall CDocker -> CookM ()
 tellCommand cmd =
     CookM $ tell $ mempty { co_commands = [cmd] }
 
+writeContainerFile :: FilePath -> BS.ByteString -> CookM ()
+writeContainerFile fp bs =
+    do fileWriter <- CookM $ asks ci_writeFile
+       fhash <- liftIO $ fileWriter fp bs
+       dependOn fhash
+
 runPlugins :: CookM ()
 runPlugins =
     loop
@@ -131,18 +143,23 @@ runPlugins =
                Nothing ->
                    return ()
                Just cmd ->
-                   do loopPlugins cmd allPlugins
+                   do _ <- popCommand
+                      loopPlugins cmd allPlugins
                       loop
       loopPlugins cmd [] =
           -- no plugin handeled the command -> must be a docker command
           -- todo: check that ;-)
-          do _ <- popCommand
-             tellCommand $ CommandCall (Command (unCommand $ c_command cmd)) (c_arguments cmd)
+          tellCommand $ CommandCall (Command (unCommand $ c_command cmd)) (c_arguments cmd)
       loopPlugins cmd ((x,st):xs) =
           if (c_command cmd == p_triggerCommand x)
-          then do mSt <- runExceptT $ unPluginM $ (p_body x) st
+          then do stack <- getCommandStack
+                  (mSt, replayActions) <-
+                      liftIO $
+                      evalRWST (runExceptT $ unPluginM $ (p_body x) cmd st) () (LocalPluginState stack)
                   case mSt of
-                    Right st' -> setPluginState (p_name x) st'
+                    Right st' ->
+                        do setPluginState (p_name x) st'
+                           sequence_ replayActions
                     Left except ->
                         case except of
                           PluginExceptSkip -> loopPlugins cmd xs
@@ -182,8 +199,8 @@ data Plugin st
    = Plugin
    { p_triggerCommand :: Command CCook
    , p_name :: PluginName
-   , p_initialState :: Typeable st => st
-   , p_body :: Typeable st => st -> PluginM st
+   , p_initialState :: st
+   , p_body :: CommandCall CCook -> st -> PluginM st
    }
 
 wrapPlugin :: forall st. Typeable st => Plugin st -> Plugin WrappedPluginState
@@ -193,11 +210,16 @@ wrapPlugin plugin =
     , p_initialState = WrappedPluginState $ unsafeCoerce (p_initialState plugin)
     }
     where
-      wrap :: (st -> PluginM st) -> (WrappedPluginState -> PluginM WrappedPluginState)
-      wrap f (WrappedPluginState unpackedState) =
-          do result <- f unpackedState
+      wrap :: (CommandCall CCook -> st -> PluginM st) -> (CommandCall CCook -> WrappedPluginState -> PluginM WrappedPluginState)
+      wrap f cmd (WrappedPluginState unpackedState) =
+          do result <- f cmd unpackedState
              return $ WrappedPluginState (unsafeCoerce result)
 
+data LocalPluginState
+   = LocalPluginState
+   { lps_commandStack :: [CommandCall CCook]
+   }
+
 newtype PluginM a
-    = PluginM { unPluginM :: ExceptT PluginExcept CookM a }
-      deriving (Monad, Functor, Applicative)
+    = PluginM { unPluginM :: ExceptT PluginExcept (RWST () [CookM ()] LocalPluginState IO) a }
+      deriving (Monad, Functor, Applicative, MonadError PluginExcept)
