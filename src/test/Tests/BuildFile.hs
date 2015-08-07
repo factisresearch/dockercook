@@ -4,12 +4,10 @@ module Tests.BuildFile (htf_thisModulesTests) where
 
 import Cook.BuildFile
 import Cook.Types
-import Paths_dockercook
 
 import Test.Framework
 import qualified Data.Vector as V
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 
 test_matchFilePattern :: IO ()
 test_matchFilePattern =
@@ -26,19 +24,13 @@ test_matchFilePattern =
       Right pattern2 = parseFilePattern "foo/*.cabal"
       Right pattern3 = parseFilePattern "foo/*"
 
-readDataFile :: String -> IO T.Text
-readDataFile name =
-    do fp <- getDataFileName name
-       T.readFile fp
-
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
     do parsed1 <- parseBuildFileText "sample1" sampleFile1 >>= assertRight
        parsed2 <- parseBuildFileText "sample1" sampleFile2 >>= assertRight
        parsed3 <- parseBuildFileText "sample3" sampleFile3 >>= assertRight
        parsed4 <- parseBuildFileText "sample3" sampleFile4 >>= assertRight
-       sampleFile5 <- readDataFile "test1.cook"
-       parsed5 <- parseBuildFileText "test1.cook" sampleFile5 >>= assertRight
+       parsed5 <- parseBuildFile "test/parsefail02.cook" >>= assertRight
        assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
        assertEqual parsed1 parsed2
        assertEqual (BuildBaseCook $ BuildFileId "foo.build") (bf_base parsed3)
@@ -76,3 +68,9 @@ test_parseBuildFile =
           , "# comment\n"
           , "\n"
           ]
+
+test_parseBuildAdvanced :: IO ()
+test_parseBuildAdvanced =
+    do t1 <- parseBuildFile "test/parsefail01.cook"
+       _ <- assertRight t1
+       return ()
