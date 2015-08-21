@@ -39,7 +39,6 @@ cookBuildTimes =
     optional $ strOption $
              long "print-build-times" <>
              metavar "OUTPUTFILE" <>
-             value "./cookBuildTimes" <>
              help "print cook buildtimes to a file"
 
 cookEntryPointP_deprecated =
