@@ -40,7 +40,10 @@ runProg' :: CookCmd -> IO ()
 runProg' cmd =
     case cmd of
       CookBuild buildCfg ->
-          do uploader <- mkUploader 100
+          do case cc_printBuildTimes buildCfg of
+               Nothing -> return ()
+               Just fp -> do writeFile fp "Build times for dockercook run:\n\n"
+             uploader <- mkUploader 100
              stateDir <- findStateDirectory
              _ <- cookBuild stateDir buildCfg uploader Nothing
              when (cc_autoPush buildCfg) $

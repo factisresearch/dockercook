@@ -18,6 +18,7 @@ data CookConfig
    , cc_cookFileDropCount :: Int           -- drop this many chars from every cook filename
    , cc_autoPush :: Bool
    , cc_forceRebuild :: Bool
+   , cc_printBuildTimes :: Maybe FilePath
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 
@@ -32,6 +33,7 @@ dummyCookConfig =
     , cc_buildEntryPoints = []
     , cc_autoPush = False
     , cc_forceRebuild = False
+    , cc_printBuildTimes = Nothing
     }
 
 data ErrorWarningOk
@@ -50,6 +52,12 @@ newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable)
 
-newtype DockerImageId
-    = DockerImageId { unDockerImageId :: T.Text }
-    deriving (Show, Eq, Hashable)
+data DockerImageId
+    = DockerImageId
+      { did_id :: T.Text
+      , did_buildTime :: Maybe Int
+      }
+    deriving (Show, Eq)
+
+instance Hashable DockerImageId where
+    hashWithSalt i did = hashWithSalt i (did_id did)

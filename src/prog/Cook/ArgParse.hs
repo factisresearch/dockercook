@@ -35,6 +35,12 @@ cookBuildP =
     value "." <>
     help "Directory of dockercook files"
 
+cookBuildTimes =
+    optional $ strOption $
+             long "print-build-times" <>
+             metavar "OUTPUTFILE" <>
+             value "./cookBuildTimes" <>
+             help "print cook buildtimes to a file"
 
 cookEntryPointP_deprecated =
     strOption $
@@ -77,6 +83,7 @@ cookOptions =
                 <*> cookFileDropP
                 <*> (switch (long "push" <> help "Push built docker containers"))
                 <*> (switch (long "force-rebuild" <> help "Rebuild all docker images regardless of dependency changes"))
+                <*> cookBuildTimes
                 <*> ((++) <$> many cookEntryPointP_deprecated
                           <*> cookFilesP))
 

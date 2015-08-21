@@ -14,7 +14,9 @@ import Cook.Util
 
 import Control.Applicative
 import Control.Concurrent.STM
+import Data.Maybe (isJust)
 import System.Exit
+import Text.Regex
 import qualified Data.Text as T
 
 newtype DockerImagesCache
@@ -26,13 +28,20 @@ data DockerContainer
 
 getImageId :: DockerImage -> IO (Maybe DockerImageId)
 getImageId (DockerImage imageName) =
-    do (ec, stdOut, _) <- readProcessWithExitCode' "docker" ["inspect", "-f", "{{.Id}}", T.unpack imageName] ""
-       if ec /= ExitSuccess
-       then return Nothing
-       else return $ Just $ DockerImageId $ T.strip $ T.pack stdOut
+    do (ec, stdOut, _) <-
+           readProcessWithExitCode' "docker" ["inspect", "-f", "'{{.Id}} {{.Config.Labels}}'", T.unpack imageName] ""
+       let [imageId, label] = T.splitOn " " $ T.strip $ T.pack stdOut
+           couldParseBuildTime = isJust $ matchRegex (mkRegex "buildTime:[0-9]+.[0-9]+") (T.unpack label)
+           mbuildTime = if couldParseBuildTime
+                          then Just $ (last . T.splitOn ":" . head . T.splitOn ".") label
+                          else Nothing
+
+       if (ec /= ExitSuccess)
+         then return Nothing
+         else return $ Just $ DockerImageId imageId (fmap (read . T.unpack) mbuildTime)
 
 tagImage :: DockerImageId -> DockerImage -> IO ()
-tagImage (DockerImageId imageId) (DockerImage imageTag) =
+tagImage (DockerImageId imageId _) (DockerImage imageTag) =
     do (ec, _, _) <- readProcessWithExitCode' "docker" ["tag", "-f", T.unpack imageId, T.unpack imageTag] ""
        if ec /= ExitSuccess
        then fail $ "Failed to tag image " ++ show imageId
@@ -97,7 +106,7 @@ doesImageExist (DockerImagesCache cacheVar) eImage =
       imageName =
           case eImage of
             Left (DockerImage n) -> n
-            Right (DockerImageId n) -> n
+            Right (DockerImageId n _) -> n
       checkLines _ [] = False
       checkLines im (line:xs) =
           let (imageBaseName, vers) = T.break (==':') im

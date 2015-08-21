@@ -239,7 +239,7 @@ syncImages sm@(StateManager{..}) imageStillExists =
                                         ++ " doesn't have a raw id on the docker host. Deleting it from local state")
                                sm_runSqlWrite $ delete (entityKey entity)
                         Just rawId ->
-                            do logInfo ("New raw id for " ++ T.unpack name ++ " is " ++ T.unpack (unDockerImageId rawId))
+                            do logInfo ("New raw id for " ++ T.unpack name ++ " is " ++ T.unpack (did_id rawId))
                                setImageId sm (DockerImage name) rawId
               else do logInfo ("The image " ++ T.unpack name
                                ++ " doesn't exist on remote docker server. Removing it from local state.")
@@ -257,11 +257,15 @@ getImageId (StateManager{..}) (DockerImage imageName) =
        case x of
          Nothing -> return Nothing
          Just entity ->
-             return $ fmap DockerImageId (dbDockerImageRawImageId $ entityVal entity)
+             return $ ap (fmap DockerImageId (dbDockerImageRawImageId $ entityVal entity)) (Just (dbDockerImageBuildTime $ entityVal entity))
+
 
 setImageId :: StateManager -> DockerImage -> DockerImageId -> IO ()
-setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId) =
-    sm_runSqlWrite $ updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId) ]
+setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId buildTime) =
+    do sm_runSqlWrite $
+           updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId)
+                                                           , DbDockerImageBuildTime =. buildTime
+                                                           ]
 
 markUsingImage :: StateManager -> DockerImage -> IO ()
 markUsingImage (StateManager{..}) (DockerImage imageName) =
@@ -270,7 +274,7 @@ markUsingImage (StateManager{..}) (DockerImage imageName) =
        case mImageEntity of
          Nothing ->
              sm_runSqlWrite $
-             do _ <- insert $ DbDockerImage imageName Nothing now now 1
+             do _ <- insert $ DbDockerImage imageName Nothing Nothing now now 1
                 return ()
          Just imageEntity ->
              sm_runSqlGet $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1
