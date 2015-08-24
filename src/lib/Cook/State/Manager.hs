@@ -8,7 +8,7 @@ module Cook.State.Manager
     , createStateManager, markUsingImage
     , isImageKnown, fastFileHash
     , syncImages, waitForWrites
-    , getImageId, setImageId
+    , getImageInfo, setImageInfo
     , _STATE_DIR_NAME_, findStateDirectory
     )
 where
@@ -232,7 +232,7 @@ syncImages sm@(StateManager{..}) imageStillExists =
                   name = dbDockerImageName dockerImage
               exists <- imageStillExists (DockerImage name)
               if exists
-              then do mRawId <- D.getImageId (DockerImage name)
+              then do mRawId <- D.getImageInfo (DockerImage name)
                       case mRawId of
                         Nothing ->
                             do logInfo ("The image " ++ T.unpack name
@@ -240,7 +240,7 @@ syncImages sm@(StateManager{..}) imageStillExists =
                                sm_runSqlWrite $ delete (entityKey entity)
                         Just rawId ->
                             do logInfo ("New raw id for " ++ T.unpack name ++ " is " ++ T.unpack (did_id rawId))
-                               setImageId sm (DockerImage name) rawId
+                               setImageInfo sm (DockerImage name) rawId
               else do logInfo ("The image " ++ T.unpack name
                                ++ " doesn't exist on remote docker server. Removing it from local state.")
                       sm_runSqlWrite $ delete (entityKey entity)
@@ -251,20 +251,20 @@ isImageKnown (StateManager{..}) (DockerImage imageName) =
     do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
        return (isJust x)
 
-getImageId :: StateManager -> DockerImage -> IO (Maybe DockerImageId)
-getImageId (StateManager{..}) (DockerImage imageName) =
+getImageInfo :: StateManager -> DockerImage -> IO (Maybe DockerImageInfo)
+getImageInfo (StateManager{..}) (DockerImage imageName) =
     do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
        case x of
          Nothing -> return Nothing
          Just entity ->
-             return $ ap (fmap DockerImageId (dbDockerImageRawImageId $ entityVal entity)) (Just (dbDockerImageBuildTime $ entityVal entity))
+             return $ ap (fmap DockerImageInfo (dbDockerImageRawImageId $ entityVal entity)) (Just (dbDockerImageBuildTimeSeconds $ entityVal entity))
 
 
-setImageId :: StateManager -> DockerImage -> DockerImageId -> IO ()
-setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId buildTime) =
+setImageInfo :: StateManager -> DockerImage -> DockerImageInfo -> IO ()
+setImageInfo (StateManager{..}) (DockerImage imageName) (DockerImageInfo imageId buildTime) =
     do sm_runSqlWrite $
            updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId)
-                                                           , DbDockerImageBuildTime =. buildTime
+                                                           , DbDockerImageBuildTimeSeconds =. buildTime
                                                            ]
 
 markUsingImage :: StateManager -> DockerImage -> IO ()

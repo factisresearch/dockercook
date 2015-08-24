@@ -12,11 +12,13 @@ import Cook.Util
 import Cook.State.Manager
 
 import Control.Monad
+import Data.Aeson
 import Options.Applicative
 import System.Exit
 import System.Log
 import System.Directory
 import System.Process
+import qualified Data.ByteString.Lazy as BSL
 
 runProg :: (Int, CookCmd) -> IO ()
 runProg (verb, cmd) =
@@ -42,7 +44,9 @@ runProg' cmd =
       CookBuild buildCfg ->
           do case cc_printBuildTimes buildCfg of
                Nothing -> return ()
-               Just fp -> do writeFile fp "Build times for dockercook run:\n\n"
+               Just fp ->
+                   do let emptyList = encode ([] :: [(String, Maybe Int)])
+                      BSL.writeFile fp emptyList
              uploader <- mkUploader 100
              stateDir <- findStateDirectory
              _ <- cookBuild stateDir buildCfg uploader Nothing

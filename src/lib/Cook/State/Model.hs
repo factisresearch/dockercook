@@ -18,7 +18,7 @@ share [mkPersist sqlSettings, mkMigrate "migrateState"] [persistLowerCase|
 DbDockerImage
     name T.Text
     rawImageId T.Text Maybe
-    buildTime Int Maybe
+    buildTimeSeconds Int Maybe
     creationDate UTCTime
     lastUsed UTCTime
     usageCount Int

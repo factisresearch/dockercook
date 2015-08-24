@@ -1,7 +1,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Cook.Types where
 
+import Data.Aeson
 import Data.Hashable
+import GHC.Generics
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
@@ -52,12 +55,15 @@ newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable)
 
-data DockerImageId
-    = DockerImageId
+data DockerImageInfo
+    = DockerImageInfo
       { did_id :: T.Text
       , did_buildTime :: Maybe Int
       }
-    deriving (Show, Eq)
+    deriving (Show, Eq, Generic)
 
-instance Hashable DockerImageId where
+instance FromJSON DockerImageInfo
+instance ToJSON DockerImageInfo
+
+instance Hashable DockerImageInfo where
     hashWithSalt i did = hashWithSalt i (did_id did)

@@ -5,7 +5,7 @@ module Cook.Docker
     , dockerReachable, doesImageExist
     , DockerContainer
     , dockerRunForCopy, dockerRm, dockerCp
-    , getImageId, tagImage
+    , getImageInfo, tagImage
     )
 where
 
@@ -26,10 +26,10 @@ data DockerContainer
     = DockerContainer { unDockerContainer :: T.Text }
       deriving (Show, Eq)
 
-getImageId :: DockerImage -> IO (Maybe DockerImageId)
-getImageId (DockerImage imageName) =
+getImageInfo :: DockerImage -> IO (Maybe DockerImageInfo)
+getImageInfo (DockerImage imageName) =
     do (ec, stdOut, _) <-
-           readProcessWithExitCode' "docker" ["inspect", "-f", "'{{.Id}} {{.Config.Labels}}'", T.unpack imageName] ""
+           readProcessWithExitCode' "docker" ["inspect", "-f", "{{.Id}} {{.Config.Labels}}", T.unpack imageName] ""
        let [imageId, label] = T.splitOn " " $ T.strip $ T.pack stdOut
            couldParseBuildTime = isJust $ matchRegex (mkRegex "buildTime:[0-9]+.[0-9]+") (T.unpack label)
            mbuildTime = if couldParseBuildTime
@@ -38,10 +38,10 @@ getImageId (DockerImage imageName) =
 
        if (ec /= ExitSuccess)
          then return Nothing
-         else return $ Just $ DockerImageId imageId (fmap (read . T.unpack) mbuildTime)
+         else return $ Just $ DockerImageInfo imageId (fmap (read . T.unpack) mbuildTime)
 
-tagImage :: DockerImageId -> DockerImage -> IO ()
-tagImage (DockerImageId imageId _) (DockerImage imageTag) =
+tagImage :: DockerImageInfo -> DockerImage -> IO ()
+tagImage (DockerImageInfo imageId _) (DockerImage imageTag) =
     do (ec, _, _) <- readProcessWithExitCode' "docker" ["tag", "-f", T.unpack imageId, T.unpack imageTag] ""
        if ec /= ExitSuccess
        then fail $ "Failed to tag image " ++ show imageId
@@ -86,7 +86,7 @@ newDockerImagesCache :: IO DockerImagesCache
 newDockerImagesCache =
     DockerImagesCache <$> newTVarIO Nothing
 
-doesImageExist :: DockerImagesCache -> Either DockerImage DockerImageId -> IO Bool
+doesImageExist :: DockerImagesCache -> Either DockerImage DockerImageInfo -> IO Bool
 doesImageExist (DockerImagesCache cacheVar) eImage =
     do mOut <- atomically $ readTVar cacheVar
        (ec, imageText) <-
@@ -106,7 +106,7 @@ doesImageExist (DockerImagesCache cacheVar) eImage =
       imageName =
           case eImage of
             Left (DockerImage n) -> n
-            Right (DockerImageId n _) -> n
+            Right (DockerImageInfo n _) -> n
       checkLines _ [] = False
       checkLines im (line:xs) =
           let (imageBaseName, vers) = T.break (==':') im

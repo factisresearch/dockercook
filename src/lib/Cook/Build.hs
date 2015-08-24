@@ -18,6 +18,7 @@ import Control.Monad
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
+import Data.Aeson
 import Data.Conduit
 import Data.Maybe (fromMaybe, isJust)
 import Data.Time.Clock
@@ -33,6 +34,7 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Conduit.Combinators as C
 import qualified Data.Streaming.Filesystem as F
 import qualified Data.Text as T
@@ -194,11 +196,11 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
                  Nothing -> (V.empty, V.empty)
            contextAdd =
                V.fromList $
-                case (bf_unpackTarget bf, null targetedFiles) of
-                  (_, True) -> []
-                  (Nothing, _) -> []
-                  (Just target, _) ->
-                      copyTarAndUnpack SkipExisting "context.tar.gz" target
+               case (bf_unpackTarget bf, null targetedFiles) of
+                 (_, True) -> []
+                 (Nothing, _) -> []
+                 (Just target, _) ->
+                     copyTarAndUnpack SkipExisting "context.tar.gz" target
            dockerCommands =
                V.concat [contextAdd, copyPreparedTar, dockerCommandsBase, cleanupCmds]
            dockerBS =
@@ -210,13 +212,13 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
            buildFileHash = quickHash [BSC.pack (show $ bf { bf_name = BuildFileId "static" })]
            superHash =
                B16.encode $ unSha1 $
-                  concatHash (prepareHash : txHashes : dockerHash : buildFileHash : (allFHashes ++ downloadHashes))
+               concatHash (prepareHash : txHashes : dockerHash : buildFileHash : (allFHashes ++ downloadHashes))
            imageName = DockerImage $ T.concat ["cook-", T.decodeUtf8 superHash]
            imageTag = T.unpack $ unDockerImage imageName
        logDebug $ "Include files: " ++ (show $ length targetedFiles)
-                    ++ " FileHashCount: " ++ (show $ length allFHashes)
-                    ++ "\nDocker: " ++ (show $ B16.encode $ unSha1 dockerHash)
-                    ++ "\nBuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
+                   ++ " FileHashCount: " ++ (show $ length allFHashes)
+                   ++ "\nDocker: " ++ (show $ B16.encode $ unSha1 dockerHash)
+                   ++ "\nBuildFile: " ++ (show $ B16.encode $ unSha1 buildFileHash)
        logDebug' $ "Image name will be " ++ imageTag
        let mUserTagName =
                fmap (\prefix -> prefix ++ drop cc_cookFileDropCount name) cc_tagprefix
@@ -240,11 +242,14 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
                do case cc_printBuildTimes of
                     Nothing -> return ()
                     Just fp ->
-                        withRawImageId image $ \imageid ->
-                            appendFile fp (fromMaybe (T.unpack $ did_id imageid) mUserTagName ++ " -- buildTime: "
-                                           ++ fromMaybe "no information\n" (fmap ((++ "s\n") . show) (did_buildTime imageid))
-                                          )
-
+                        withRawImageId image $ \imageInfo ->
+                            do jsonBs <- BS.readFile fp
+                               case (decodeStrict jsonBs) of
+                                 Nothing -> error "failed to parse buildTimes file"
+                                 Just infoList ->
+                                     do let idString = fromMaybe (T.unpack $ did_id imageInfo) mUserTagName
+                                            newJsonBs = encode ((idString, did_buildTime imageInfo) : infoList)
+                                        BS.writeFile fp (BSL.toStrict newJsonBs)
        announceBegin
        imageExists <- dockerImageExists imageName
        (mNewTag, newImage) <-
@@ -267,7 +272,7 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
                    hPutStrLn stderr ("built " ++ nameTagArrow)
                    withRawImageId imageName $ \imageId ->
                        do logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
-                          setImageId stateManager imageName imageId
+                          setImageInfo stateManager imageName imageId
                    return (mTag, x)
        when (cc_autoPush) $
             case mNewTag of
@@ -280,7 +285,7 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
        return newImage
     where
       withRawImageId imageName action =
-          do mImageId <- D.getImageId imageName
+          do mImageId <- D.getImageInfo imageName
              case mImageId of
                Nothing ->
                    do let errorMsg =
@@ -304,12 +309,12 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
       dockerImageExists localIm@(DockerImage imageName) =
           do logDebug' $ "Checking if the image " ++ show imageName ++ " is already present... "
              known <- isImageKnown stateManager localIm
-             mRawImageId <- getImageId stateManager localIm
+             mRawImageId <- getImageInfo stateManager localIm
              let storeRawId =
                      unless (isJust mRawImageId) $
                      withRawImageId localIm $ \imageId ->
                          do logDebug' $ "The raw id of " ++ (T.unpack imageName) ++ " is " ++ show imageId
-                            setImageId stateManager localIm imageId
+                            setImageInfo stateManager localIm imageId
              if known
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      storeRawId
