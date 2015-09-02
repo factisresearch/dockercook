@@ -18,8 +18,10 @@ import Control.Monad
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
+import Data.Aeson
 import Data.Conduit
 import Data.Maybe (fromMaybe, isJust)
+import Data.Time.Clock
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -27,10 +29,12 @@ import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
+import qualified Data.Attoparsec.Text as AT
 import qualified Data.HashMap.Strict as HM
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Conduit.Combinators as C
 import qualified Data.Streaming.Filesystem as F
 import qualified Data.Text as T
@@ -146,11 +150,11 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
              logDebug ("PREPARE: Hashing " ++ show fp)
              return $ [quickHash bs]
 
-buildImage :: D.DockerImagesCache
+buildImages :: D.DockerImagesCache
            -> Maybe StreamHook
            -> CookConfig -> StateManager -> HashManager -> [(FP.FilePath, SHA1)]
            -> Uploader -> BuildFile -> IO DockerImage
-buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader bf =
+buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader bf =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
     withSystemTempDirectory "cookprepareXXX" $ \prepareDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
@@ -158,7 +162,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint cfg parentBuildFile
-                    buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader parent
+                    buildImages imCache mStreamHook cfg stateManager hashManager fileHashes uploader parent
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
@@ -166,7 +170,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                             return rootImage
                     else do hPutStrLn stderr $ "Downloading the docker root image " ++ show (unDockerImage rootImage) ++ "... "
                             (ec, stdOut, stdErr) <-
-                                readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
+                               readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
                             then do markUsingImage stateManager rootImage
                                     return rootImage
@@ -176,7 +180,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
        cookCopyHm <-
            forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
                do cookPrep <- prepareEntryPoint cfg (BuildFileId $ T.pack cookFile)
-                  image <- buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader cookPrep
+                  image <- buildImages imCache mStreamHook cfg stateManager hashManager fileHashes uploader cookPrep
                   return (image, files)
        (mTar, mkPrepareTar, prepareHash) <-
            runPrepareCommands buildTempDir prepareDir bf streamHook cookCopyHm
@@ -233,7 +237,19 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                fromMaybe "" $ fmap (\userTag -> " --> " ++ userTag) mUserTagName
            nameTagArrow =
                imageTag ++ tagInfo
-
+           printBuildTimesToFile :: DockerImage -> IO ()
+           printBuildTimesToFile image =
+               do case cc_printBuildTimes of
+                    Nothing -> return ()
+                    Just fp ->
+                        withRawImageId image $ \imageInfo ->
+                            do jsonBs <- BS.readFile fp
+                               case (decodeStrict jsonBs) of
+                                 Nothing -> error "failed to parse buildTimes file"
+                                 Just infoList ->
+                                     do let idString = fromMaybe (T.unpack $ did_id imageInfo) mUserTagName
+                                            newJsonBs = encode ((idString, did_buildTime imageInfo) : infoList)
+                                        BS.writeFile fp (BSL.toStrict newJsonBs)
        announceBegin
        imageExists <- dockerImageExists imageName
        (mNewTag, newImage) <-
@@ -241,6 +257,7 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
            then do hPutStrLn stderr ("found " ++ nameTagArrow)
                    logDebug' "The image already exists!"
                    mTag <- markImage
+                   printBuildTimesToFile imageName
                    return (mTag, imageName)
            else do hPutStrLn stderr ("building " ++ imageTag ++ " ("
                                      ++ if cc_forceRebuild then "forced" else "hash changed"
@@ -249,12 +266,13 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                    unless (cc_forceRebuild) $ logDebug' "Image not found!"
                    mkPrepareTar
                    x <- launchImageBuilder dockerBS imageName buildTempDir
+                   printBuildTimesToFile x
                    mTag <- markImage
                    announceBegin
                    hPutStrLn stderr ("built " ++ nameTagArrow)
                    withRawImageId imageName $ \imageId ->
-                     do logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
-                        setImageId stateManager imageName imageId
+                       do logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
+                          setImageInfo stateManager imageName imageId
                    return (mTag, x)
        when (cc_autoPush) $
             case mNewTag of
@@ -262,17 +280,17 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
                   logError ("Autopush is enabled, but no tag provided!")
               Just newTag ->
                   do logInfo ("enqueuing " ++ (T.unpack $ unDockerImage newTag)
-                                           ++ " for upload to registry")
+                              ++ " for upload to registry")
                      enqueueImage uploader newTag
        return newImage
     where
       withRawImageId imageName action =
-          do mImageId <- D.getImageId imageName
+          do mImageId <- D.getImageInfo imageName
              case mImageId of
                Nothing ->
                    do let errorMsg =
                               "Failed to get the raw image id of " ++ (T.unpack $ unDockerImage $ imageName)
-                              ++ ". Did you run dockercook sync?"
+                           ++ ". Did you run dockercook sync?"
                       logWarn errorMsg
                       error errorMsg
                Just imageId -> action imageId
@@ -291,12 +309,12 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
       dockerImageExists localIm@(DockerImage imageName) =
           do logDebug' $ "Checking if the image " ++ show imageName ++ " is already present... "
              known <- isImageKnown stateManager localIm
-             mRawImageId <- getImageId stateManager localIm
+             mRawImageId <- getImageInfo stateManager localIm
              let storeRawId =
                      unless (isJust mRawImageId) $
                      withRawImageId localIm $ \imageId ->
-                        do logDebug' $ "The raw id of " ++ (T.unpack imageName) ++ " is " ++ show imageId
-                           setImageId stateManager localIm imageId
+                         do logDebug' $ "The raw id of " ++ (T.unpack imageName) ++ " is " ++ show imageId
+                            setImageInfo stateManager localIm imageId
              if known
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      storeRawId
@@ -341,15 +359,34 @@ buildImage imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fil
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              logDebug' ("Building " ++ name ++ "...")
              let tag = T.unpack $ unDockerImage imageName
+             beginTime <- getCurrentTime
              ecDocker <- systemStream Nothing ("docker build --no-cache --force-rm --rm -t " ++ tag ++ " " ++ tempDir) streamHook
+             totalTime <- liftM (flip diffUTCTime beginTime) $ getCurrentTime
              if ecDocker == ExitSuccess
-               then return imageName
-               else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
-                       hPutStrLn stderr ("Failing Cookfile: "
-                                         ++ T.unpack (unBuildFileId (bf_name bf)))
-                       hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
-                       _ <- systemStream Nothing ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
-                       exitWith ecDocker
+             then
+                 case cc_printBuildTimes of
+                   Just _ ->
+                       do (ecCreateContainer, contId, stderr1)
+                              <- readProcessWithExitCode' "docker" ["create", tag] ""
+                          hPutStrLn stderr contId
+                          let buildTimeLabel = "LABEL buildTime " ++ show totalTime
+                              contIdFormatted = T.unpack $ T.strip (T.pack contId)
+                          (ecAppendLabel, newImageHash, stderr2)
+                              <- readProcessWithExitCode' "docker" ["commit", "--change", buildTimeLabel , contIdFormatted, tag] ""
+                          if (ecCreateContainer == ExitSuccess && ecAppendLabel == ExitSuccess)
+                          then return (DockerImage $ T.pack $ takeWhile (not . AT.isEndOfLine) newImageHash)
+                          else do logDebug' stderr1
+                                  logDebug' stderr2
+                                  hPutStrLn stderr ("Failed to get build time")
+                                  exitWith $ ExitFailure 1
+                   Nothing ->
+                       return imageName
+             else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
+                     hPutStrLn stderr ("Failing Cookfile: "
+                                       ++ T.unpack (unBuildFileId (bf_name bf)))
+                     hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
+                     _ <- systemStream Nothing ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
+                     exitWith ecDocker
       localName fp =
           case FP.stripPrefix (FP.decodeString $ fixTailingSlash cc_dataDir) fp of
             Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ cc_dataDir)
@@ -367,7 +404,7 @@ cookBuild stateDir cfg@(CookConfig{..}) uploader mStreamHook =
        roots <-
            mapM ((prepareEntryPoint cfg) . BuildFileId . T.pack) cc_buildEntryPoints
        imCache <- D.newDockerImagesCache
-       res <- mapM (buildImage imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
+       res <- mapM (buildImages imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
        waitForWrites stateManager
        logInfo "Finished building all required images!"
        return res

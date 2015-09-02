@@ -33,6 +33,7 @@ library
                        Cook.Docker,
                        Cook.State.Model
   build-depends:
+                       aeson >=0.8.0.2, 
                        attoparsec >=0.11,
                        base >=4.6 && <5,
                        base16-bytestring >=0.1,
@@ -73,13 +74,16 @@ executable dockercook
   main-is:             Main.hs
   other-modules:       Cook.ArgParse
   build-depends:
+                       aeson >=0.8.0.2,
                        base >=4.6 && <5,
+                       bytestring >=0.10,
                        directory,
                        dockercook,
                        filepath,
                        hslogger,
                        optparse-applicative >=0.11.0.1,
-                       process
+                       process,
+                       regex-compat >=0.95
   hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 

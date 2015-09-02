@@ -1,7 +1,10 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 module Cook.Types where
 
+import Data.Aeson
 import Data.Hashable
+import GHC.Generics
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
 
@@ -18,6 +21,7 @@ data CookConfig
    , cc_cookFileDropCount :: Int           -- drop this many chars from every cook filename
    , cc_autoPush :: Bool
    , cc_forceRebuild :: Bool
+   , cc_printBuildTimes :: Maybe FilePath
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 
@@ -32,6 +36,7 @@ dummyCookConfig =
     , cc_buildEntryPoints = []
     , cc_autoPush = False
     , cc_forceRebuild = False
+    , cc_printBuildTimes = Nothing
     }
 
 data ErrorWarningOk
@@ -50,6 +55,15 @@ newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable)
 
-newtype DockerImageId
-    = DockerImageId { unDockerImageId :: T.Text }
-    deriving (Show, Eq, Hashable)
+data DockerImageInfo
+    = DockerImageInfo
+      { did_id :: T.Text
+      , did_buildTime :: Maybe Int
+      }
+    deriving (Show, Eq, Generic)
+
+instance FromJSON DockerImageInfo
+instance ToJSON DockerImageInfo
+
+instance Hashable DockerImageInfo where
+    hashWithSalt i did = hashWithSalt i (did_id did)
