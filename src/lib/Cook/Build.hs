@@ -335,14 +335,14 @@ buildImages imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fi
              case (null targetedFiles) of
                False ->
                    do
-                     let includedFiles = map (FP.encodeString . localName . fst) targetedFiles
-                     compressFilesInDir False contextPkg cc_dataDir includedFiles
-                     currentDir <- getCurrentDirectory
-                     let includedFilesFull = map (FP.encodeString . fst) targetedFiles
-                     forM_ includedFilesFull $ \f ->
-                         do didChange <- (hm_didFileChange hashManager) (currentDir </> f)
-                            when didChange $
-                                 fail $ "Inconsistency error: File " ++ f ++ " changed during build!"
+                      let includedFiles = map (FP.encodeString . localName . fst) targetedFiles
+                      compressFilesInDir False contextPkg cc_dataDir includedFiles
+                      currentDir <- getCurrentDirectory
+                      let includedFilesFull = map (FP.encodeString . fst) targetedFiles
+                      forM_ includedFilesFull $ \f ->
+                          do didChange <- (hm_didFileChange hashManager) (currentDir </> f)
+                             when didChange $
+                                fail $ "Inconsistency error: File " ++ f ++ " changed during build!"
                True ->
                    logWarn ("You've provided an UNPACK directive, but no files "
                             ++ "match any of your INCLUDE directives...")

@@ -17,13 +17,15 @@ import Options.Applicative
 import System.Exit
 import System.Log
 import System.Directory
-import System.Process
+import Text.Regex (mkRegex, matchRegex)
+import Data.Maybe (isJust)
 import qualified Data.ByteString.Lazy as BSL
 
 runProg :: (Int, CookCmd) -> IO ()
 runProg (verb, cmd) =
     do initLoggingFramework logLevel
-       ec <- system "command -v docker >/dev/null 2>&1"
+       (ec, stdOut, _) <- readProcessWithExitCode' "docker" ["-v"] ""
+       checkVersion stdOut
        case ec of
          ExitSuccess ->
              runProg' cmd
@@ -37,6 +39,18 @@ runProg (verb, cmd) =
             2 -> INFO
             3 -> DEBUG
             _ -> error "Invalid verbosity! Pick 0-3"
+      checkVersion input =
+          let regex = mkRegex "Docker version [0-9]+.[0-9]"
+              couldParseVersion = isJust $ matchRegex regex input
+          in
+            case couldParseVersion of
+              True ->
+                  let ver = (filter (\c -> (c/='.') && (c/= ',')) . flip (!!) 2 . words) input
+                  in if ((read ver :: Int) < 160)
+                     then error "Must have docker version > 1.6"
+                     else return ()
+              False ->
+                  error "could not determine docker version"
 
 runProg' :: CookCmd -> IO ()
 runProg' cmd =
