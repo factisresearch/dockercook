@@ -13,6 +13,7 @@ import Cook.Uploader
 import Cook.Util
 import Cook.Downloads
 import qualified Cook.Docker as D
+import qualified Cook.DirectDocker as Docker
 
 import Control.Applicative
 import Control.Monad
@@ -147,15 +148,16 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
              logDebug ("PREPARE: Hashing " ++ show fp)
              return $ [quickHash bs]
 
-buildImage :: FilePath
-           -> D.DockerImagesCache
+buildImage :: Docker.DockerInfo
+           -> FilePath
+           -> Docker.DockerImagesCache
            -> Maybe StreamHook
            -> CookConfig
            -> StateManager
            -> HashManager
            -> [(FP.FilePath, SHA1)]
            -> Uploader -> (BuildFile, FilePath) -> IO DockerImage
-buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader (bf, bfRootDir) =
+buildImage hostInfo rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashManager fileHashes uploader (bf, bfRootDir) =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
     withSystemTempDirectory "cookprepareXXX" $ \prepareDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
@@ -163,17 +165,17 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint $ buildFileIdAddParent bfRootDir parentBuildFile
-                    buildImage rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader (parent, bfRootDir)
+                    buildImage hostInfo rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader (parent, bfRootDir)
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
-                    then do markUsingImage stateManager rootImage
+                    then do markUsingImage stateManager rootImage (Docker.di_id hostInfo)
                             return rootImage
                     else do hPutStrLn stderr $ "Downloading the docker root image " ++ show (unDockerImage rootImage) ++ "... "
                             (ec, stdOut, stdErr) <-
                                 readProcessWithExitCode "docker" ["pull", T.unpack $ unDockerImage rootImage] ""
                             if ec == ExitSuccess
-                            then do markUsingImage stateManager rootImage
+                            then do markUsingImage stateManager rootImage (Docker.di_id hostInfo)
                                     return rootImage
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
@@ -181,7 +183,7 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
        cookCopyHm <-
            forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
                do cookPrep <- prepareEntryPoint (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cookFile)
-                  image <- buildImage rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader (cookPrep, bfRootDir)
+                  image <- buildImage hostInfo rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader (cookPrep, bfRootDir)
                   return (image, files)
        (mTar, mkPrepareTar, prepareHash) <-
            runPrepareCommands buildTempDir prepareDir bf streamHook cookCopyHm
@@ -225,7 +227,7 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
                fmap (\prefix -> prefix ++ drop cc_cookFileDropCount name) cc_tagprefix
            markImage :: IO (Maybe DockerImage)
            markImage =
-               do markUsingImage stateManager imageName
+               do markUsingImage stateManager imageName (Docker.di_id hostInfo)
                   T.forM mUserTagName $ \userTag ->
                       do _ <- systemStream Nothing ("docker tag -f " ++ imageTag ++ " " ++ userTag) streamHook
                          return (DockerImage $ T.pack userTag)
@@ -272,7 +274,7 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
        return newImage
     where
       withRawImageId imageName action =
-          do mImageId <- D.getImageId imageName
+          do mImageId <- Docker.dockerInspectImage imageName
              case mImageId of
                Nothing ->
                    do let errorMsg =
@@ -280,7 +282,7 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
                               ++ ". Did you run dockercook sync?"
                       logWarn errorMsg
                       error errorMsg
-               Just imageId -> action imageId
+               Just imageInfo -> action (Docker.dii_id imageInfo)
       name = dropExtension $ takeFileName $ T.unpack $ unBuildFileId $ bf_name bf
       logDebug' m =
           do logDebug m
@@ -295,8 +297,8 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
                Just (StreamHook hook) -> hook bs
       dockerImageExists localIm@(DockerImage imageName) =
           do logDebug' $ "Checking if the image " ++ show imageName ++ " is already present... "
-             known <- isImageKnown stateManager localIm
-             mRawImageId <- getImageId stateManager localIm
+             known <- isImageKnown stateManager localIm (Docker.di_id hostInfo)
+             mRawImageId <- getImageId stateManager localIm (Docker.di_id hostInfo)
              let storeRawId =
                      unless (isJust mRawImageId) $
                      withRawImageId localIm $ \imageId ->
@@ -306,13 +308,13 @@ buildImage rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManager hashMan
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      storeRawId
                      return True
-             else do taggedExists <- D.doesImageExist imCache (Left localIm)
+             else do taggedExists <- Docker.doesImageExist imCache (Left localIm)
                      case (taggedExists, mRawImageId) of
                        (True, _) ->
                            do storeRawId
                               return True
                        (False, Just rawId) ->
-                           do rawExists <- D.doesImageExist imCache (Right rawId)
+                           do rawExists <- Docker.doesImageExist imCache (Right rawId)
                               when rawExists $
                                    D.tagImage rawId localIm
                               return rawExists
@@ -374,8 +376,15 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
                      (,) <$> (prepareEntryPoint . BuildFileId . T.pack) entryPointFile
                          <*> return (takeDirectory entryPointFile)
                 ) cc_buildEntryPoints
-       imCache <- D.newDockerImagesCache
-       res <- mapM (buildImage rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
+       hostInfo <-
+           do di <- Docker.dockerInfo
+              case di of
+                Nothing ->
+                    error "docker info failed! Are you connected to a docker host?"
+                Just info -> return info
+       logInfo ("Builds will be run on " ++ (T.unpack $ Docker.di_name hostInfo))
+       imCache <- Docker.newDockerImagesCache
+       res <- mapM (buildImage hostInfo rootDir imCache mStreamHook cfg stateManager hashManager fileHashes uploader) roots
        waitForWrites stateManager
        logInfo "Finished building all required images!"
        return res

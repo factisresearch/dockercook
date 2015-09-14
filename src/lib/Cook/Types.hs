@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Cook.Types where
 
+import Data.Aeson
 import Data.Hashable
 import qualified Data.ByteString as BS
 import qualified Data.Text as T
@@ -33,8 +34,8 @@ newtype SHA1 =
 
 newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
-    deriving (Show, Eq, Hashable)
+    deriving (Show, Eq, Hashable, Ord)
 
 newtype DockerImageId
     = DockerImageId { unDockerImageId :: T.Text }
-    deriving (Show, Eq, Hashable)
+    deriving (Show, Eq, Hashable, FromJSON, Ord)

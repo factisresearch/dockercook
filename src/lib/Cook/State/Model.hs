@@ -16,12 +16,13 @@ import qualified Data.ByteString as BS
 
 share [mkPersist sqlSettings, mkMigrate "migrateState"] [persistLowerCase|
 DbDockerImage
+    host T.Text
     name T.Text
     rawImageId T.Text Maybe
     creationDate UTCTime
     lastUsed UTCTime
     usageCount Int
-    UniqueDbDockerImage name
+    UniqueDbDockerImage name host
     deriving Show
 DbHashCache
     fullPath FilePath

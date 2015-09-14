@@ -1,35 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 module Cook.Docker
-    ( DockerImagesCache, newDockerImagesCache
-    , dockerReachable, doesImageExist
+    ( dockerReachable
     , DockerContainer
     , dockerRunForCopy, dockerRm, dockerCp
-    , getImageId, tagImage
+    , tagImage
     )
 where
 
 import Cook.Types
 import Cook.Util
 
-import Control.Applicative
-import Control.Concurrent.STM
 import System.Exit
 import qualified Data.Text as T
-
-newtype DockerImagesCache
-    = DockerImagesCache { _unDockerImagesCache :: TVar (Maybe T.Text) }
 
 data DockerContainer
     = DockerContainer { unDockerContainer :: T.Text }
       deriving (Show, Eq)
-
-getImageId :: DockerImage -> IO (Maybe DockerImageId)
-getImageId (DockerImage imageName) =
-    do (ec, stdOut, _) <- readProcessWithExitCode' "docker" ["inspect", "-f", "{{.Id}}", T.unpack imageName] ""
-       if ec /= ExitSuccess
-       then return Nothing
-       else return $ Just $ DockerImageId $ T.strip $ T.pack stdOut
 
 tagImage :: DockerImageId -> DockerImage -> IO ()
 tagImage (DockerImageId imageId) (DockerImage imageTag) =
@@ -72,39 +59,3 @@ dockerCp dc containerPath hostPath =
         if ec /= ExitSuccess
         then fail $ "Failed to cp from container " ++ cid ++ ": " ++ stderr
         else return ()
-
-newDockerImagesCache :: IO DockerImagesCache
-newDockerImagesCache =
-    DockerImagesCache <$> newTVarIO Nothing
-
-doesImageExist :: DockerImagesCache -> Either DockerImage DockerImageId -> IO Bool
-doesImageExist (DockerImagesCache cacheVar) eImage =
-    do mOut <- atomically $ readTVar cacheVar
-       (ec, imageText) <-
-           case mOut of
-             Just textOut ->
-                 do logDebug "Using cached docker images for doesImageExist"
-                    return (ExitSuccess, textOut)
-             Nothing ->
-                 do logDebug "Using live docker images for doesImageExist"
-                    (ecL, stdOut, _) <- readProcessWithExitCode' "docker" ["images"] ""
-                    let textOut = T.pack stdOut
-                    atomically $ writeTVar cacheVar (Just textOut)
-                    return (ecL, textOut)
-       let imageLines = T.lines imageText
-       return $ ec == ExitSuccess && checkLines imageName imageLines
-    where
-      imageName =
-          case eImage of
-            Left (DockerImage n) -> n
-            Right (DockerImageId n) -> n
-      checkLines _ [] = False
-      checkLines im (line:xs) =
-          let (imageBaseName, vers) = T.break (==':') im
-          in if T.isPrefixOf imageBaseName line
-             then if vers == ""
-                  then True
-                  else if T.isInfixOf (T.drop 1 vers) line
-                       then True
-                       else checkLines im xs
-             else checkLines im xs

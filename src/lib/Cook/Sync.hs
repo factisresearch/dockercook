@@ -4,6 +4,7 @@ module Cook.Sync where
 import Cook.Util
 import Cook.State.Manager
 import qualified Cook.Docker as D
+import qualified Cook.DirectDocker as Docker
 
 import System.Directory
 
@@ -14,7 +15,7 @@ runSync stateDir =
        if reachable
        then do logInfo "Sync started, please wait..."
                (stateManager, _) <- createStateManager stateDir
-               imCache <- D.newDockerImagesCache
-               syncImages stateManager (\v -> D.doesImageExist imCache (Left v))
+               imCache <- Docker.newDockerImagesCache
+               syncImages stateManager (\v -> Docker.doesImageExist imCache (Left v))
                logInfo "Sync complete."
        else logError "Docker daemon not reachable!"

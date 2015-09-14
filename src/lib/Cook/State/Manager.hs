@@ -16,7 +16,7 @@ where
 import Cook.Util
 import Cook.State.Model
 import Cook.Types
-import qualified Cook.Docker as D
+import qualified Cook.DirectDocker as Docker
 
 import Control.Applicative
 import Control.Concurrent
@@ -232,7 +232,7 @@ syncImages sm@(StateManager{..}) imageStillExists =
                   name = dbDockerImageName dockerImage
               exists <- imageStillExists (DockerImage name)
               if exists
-              then do mRawId <- D.getImageId (DockerImage name)
+              then do mRawId <- Docker.dockerImageId (DockerImage name)
                       case mRawId of
                         Nothing ->
                             do logInfo ("The image " ++ T.unpack name
@@ -246,14 +246,14 @@ syncImages sm@(StateManager{..}) imageStillExists =
                       sm_runSqlWrite $ delete (entityKey entity)
        sm_waitForWrites
 
-isImageKnown :: StateManager -> DockerImage -> IO Bool
-isImageKnown (StateManager{..}) (DockerImage imageName) =
-    do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
+isImageKnown :: StateManager -> DockerImage -> Docker.DockerHostId -> IO Bool
+isImageKnown (StateManager{..}) (DockerImage imageName) dh =
+    do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName $ Docker.dockerHostIdAsText dh)
        return (isJust x)
 
-getImageId :: StateManager -> DockerImage -> IO (Maybe DockerImageId)
-getImageId (StateManager{..}) (DockerImage imageName) =
-    do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
+getImageId :: StateManager -> DockerImage -> Docker.DockerHostId -> IO (Maybe DockerImageId)
+getImageId (StateManager{..}) (DockerImage imageName) dh =
+    do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName $ Docker.dockerHostIdAsText dh)
        case x of
          Nothing -> return Nothing
          Just entity ->
@@ -263,14 +263,15 @@ setImageId :: StateManager -> DockerImage -> DockerImageId -> IO ()
 setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId) =
     sm_runSqlWrite $ updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId) ]
 
-markUsingImage :: StateManager -> DockerImage -> IO ()
-markUsingImage (StateManager{..}) (DockerImage imageName) =
-    do mImageEntity <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName)
+markUsingImage :: StateManager -> DockerImage -> Docker.DockerHostId -> IO ()
+markUsingImage (StateManager{..}) (DockerImage imageName) dh =
+    do let hostId = Docker.dockerHostIdAsText dh
+       mImageEntity <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName hostId)
        now <- getCurrentTime
        case mImageEntity of
          Nothing ->
              sm_runSqlWrite $
-             do _ <- insert $ DbDockerImage imageName Nothing now now 1
+             do _ <- insert $ DbDockerImage hostId imageName Nothing now now 1
                 return ()
          Just imageEntity ->
              sm_runSqlGet $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1
