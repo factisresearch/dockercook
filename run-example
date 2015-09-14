@@ -1,5 +1,4 @@
 #!/bin/bash
-DOCKERCOOK=../dist/build/dockercook/dockercook
 cd example
-"$DOCKERCOOK" init
-"$DOCKERCOOK" cook build/project
+stack exec dockercook init
+stack exec dockercook cook build/project
