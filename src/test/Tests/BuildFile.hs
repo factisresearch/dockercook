@@ -26,11 +26,12 @@ test_matchFilePattern =
 
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
-    do parsed1 <- parseBuildFileText "sample1" sampleFile1 >>= assertRight
-       parsed2 <- parseBuildFileText "sample1" sampleFile2 >>= assertRight
-       parsed3 <- parseBuildFileText "sample3" sampleFile3 >>= assertRight
-       parsed4 <- parseBuildFileText "sample3" sampleFile4 >>= assertRight
-       parsed5 <- parseBuildFile "test/parsefail02.cook" >>= assertRight
+    do let dummyCfg = dummyCookConfig
+       parsed1 <- parseBuildFileText dummyCfg "sample1" sampleFile1 >>= assertRight
+       parsed2 <- parseBuildFileText dummyCfg "sample1" sampleFile2 >>= assertRight
+       parsed3 <- parseBuildFileText dummyCfg "sample3" sampleFile3 >>= assertRight
+       parsed4 <- parseBuildFileText dummyCfg "sample3" sampleFile4 >>= assertRight
+       parsed5 <- parseBuildFile dummyCfg "test/parsefail02.cook" >>= assertRight
        assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
        assertEqual parsed1 parsed2
        assertEqual (BuildBaseCook $ BuildFileId "foo.build") (bf_base parsed3)
@@ -71,6 +72,6 @@ test_parseBuildFile =
 
 test_parseBuildAdvanced :: IO ()
 test_parseBuildAdvanced =
-    do t1 <- parseBuildFile "test/parsefail01.cook"
+    do t1 <- parseBuildFile dummyCookConfig "test/parsefail01.cook"
        _ <- assertRight t1
        return ()
