@@ -224,9 +224,10 @@ hashManagerLookup (StateManager{..}) hashMapV hashWriteChan fullFilePath compute
          Nothing ->
              recomputeHash
 
-syncImages :: StateManager -> (DockerImage -> IO Bool) -> IO ()
-syncImages sm@(StateManager{..}) imageStillExists =
-    do x <- sm_runSqlGet $ selectList [] []
+syncImages :: StateManager -> Docker.DockerHostId -> (DockerImage -> IO Bool) -> IO ()
+syncImages sm@(StateManager{..}) dh imageStillExists =
+    do let hostId = Docker.dockerHostIdAsText dh
+       x <- sm_runSqlGet $ selectList [DbDockerImageHost ==. hostId] []
        forM_ x $ \entity ->
            do let dockerImage = entityVal entity
                   name = dbDockerImageName dockerImage

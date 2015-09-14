@@ -1,4 +1,6 @@
 #!/bin/bash
 cd example
+stack exec dockercook version
 stack exec dockercook init
+stack exec dockercook sync
 stack exec dockercook cook build/project
