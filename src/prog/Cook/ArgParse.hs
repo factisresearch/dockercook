@@ -7,10 +7,11 @@ data CookCmd
    = CookBuild CookConfig
    | CookParse [FilePath]
    | CookSync
-   | CookVersion
+   | CookVersion Bool
    | CookInit
    deriving (Show, Eq)
 
+cookTagP :: Parser (Maybe String)
 cookTagP =
     optional $
     strOption $
@@ -36,10 +37,12 @@ cookVerboseP =
     value 2 <>
     help "log levels for 0 - 3"
 
+cookBoringP :: Parser (Maybe String)
 cookBoringP =
     optional $ strOption ( long "ignore" <> short 'i' <> metavar "FILENAME"
                            <> help "File with regex list of ignored files." )
 
+cookFilesP :: Parser [String]
 cookFilesP =
     many (argument str (metavar "COOKFILE"))
 
@@ -60,6 +63,11 @@ cookParse :: Parser CookCmd
 cookParse =
     CookParse <$> cookFilesP
 
+cookVersion :: Parser CookCmd
+cookVersion =
+    CookVersion
+    <$> (switch $ long "numeric" <> help "Show numeric version")
+
 argParse :: Parser (Int, CookCmd)
 argParse =
     (,) <$> cookVerboseP <*> argParse'
@@ -70,6 +78,6 @@ argParse' =
     (  command "cook" (info cookOptions ( progDesc "Cook docker images" ))
     <> command "check" (info cookParse ( progDesc "Validate a Dockercook file" ))
     <> command "sync" (info cookSync ( progDesc "Sync local state with remote docker server" ))
-    <> command "version" (info (pure CookVersion) ( progDesc "Show programs version" ))
+    <> command "version" (info cookVersion ( progDesc "Show programs version" ))
     <> command "init" (info (pure CookInit) ( progDesc "Enable dockercook for current project / directory" ))
     )

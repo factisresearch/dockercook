@@ -1,7 +1,7 @@
 module Main where
 
 import Paths_dockercook (version)
-import Data.Version (showVersion)
+import Data.Version (showVersion, versionBranch)
 
 import Cook.ArgParse
 import Cook.Build
@@ -11,6 +11,7 @@ import Cook.Uploader
 import Cook.Util
 import Cook.State.Manager
 
+import Data.List (foldl')
 import Control.Monad
 import Options.Applicative
 import System.Exit
@@ -57,8 +58,11 @@ runProg' cmd =
              runSync stateDir
       CookParse files ->
           mapM_ cookParse files
-      CookVersion ->
-          putStrLn ("dockercook " ++ showVersion version)
+      CookVersion showNumeric ->
+          if showNumeric
+          then print (foldl' (\v (vers, pos) -> v + vers * (10 ^ (2*pos))) 0 $
+                      zip (reverse $ versionBranch version) ([0..] :: [Integer]))
+          else putStrLn ("dockercook " ++ showVersion version)
       CookInit ->
           do createDirectoryIfMissing True _STATE_DIR_NAME_
              _ <- createStateManager _STATE_DIR_NAME_
