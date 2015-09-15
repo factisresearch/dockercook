@@ -183,6 +183,5 @@ doesImageExist (DockerImagesCache cacheVar) eImage =
       doLookup (tagSet, imageIdSet) =
           case eImage of
             Left (DockerImage n) ->
-                S.member (DockerTag n DockerTagVersionLatest) tagSet
-                 || S.member (DockerTag n DockerTagVersionNone) tagSet
+                S.member (parseDockerTag n) tagSet
             Right n -> S.member n imageIdSet
