@@ -21,7 +21,7 @@ import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Conduit
-import Data.Maybe (fromMaybe, isJust)
+import Data.Maybe (fromMaybe, isJust, catMaybes)
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -183,6 +183,15 @@ buildImage hostInfo rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManage
                                     return rootImage
                             else error ("Can't find provided base docker image "
                                         ++ (show $ unDockerImage rootImage) ++ ": " ++ stdOut ++ "\n" ++ stdErr)
+       baseDockerId <-
+           case bf_base bf of
+             BuildBaseDocker rootImage ->
+                 do mImageId <- Docker.dockerImageId rootImage
+                    case mImageId of
+                      Nothing ->
+                          error ("Failed to get image id of " ++ (show $ unDockerImage rootImage))
+                      Just i -> return $ Just (T.encodeUtf8 $ unDockerImageId i)
+             _ -> return Nothing
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
        cookCopyHm <-
            forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
@@ -214,7 +223,11 @@ buildImage hostInfo rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManage
                BSC.concat [ "FROM ", T.encodeUtf8 (unDockerImage baseImage), "\n"
                           , T.encodeUtf8 $ T.unlines $ V.toList $ V.map dockerCmdToText dockerCommands
                           ]
-           dockerHash = quickHash [dockerBS]
+           dockerHash =
+               quickHash $ catMaybes
+               [ Just dockerBS
+               , baseDockerId
+               ]
            allFHashes = map snd targetedFiles
            buildFileHash = quickHash [BSC.pack (show $ bf { bf_name = BuildFileId "static" })]
            superHash =
