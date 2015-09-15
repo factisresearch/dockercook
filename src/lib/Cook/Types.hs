@@ -13,8 +13,10 @@ newtype DownloadUrl
 data CookConfig
    = CookConfig
    { cc_boringFile :: Maybe FilePath
-   , cc_tagprefix :: Maybe String          -- additionally tag images using this prefix + cook filename
-   , cc_cookFileDropCount :: Int           -- drop this many chars from every cook filename
+   , cc_tagprefix :: Maybe String
+   -- ^ additionally tag images using this prefix + cook filename
+   , cc_cookFileDropCount :: Int
+   -- ^ drop this many chars from every cook filename
    , cc_autoPush :: Bool
    , cc_forceRebuild :: Bool
    , cc_buildEntryPoints :: [String]
@@ -32,10 +34,12 @@ newtype SHA1 =
     SHA1 { unSha1 :: BS.ByteString }
          deriving (Show, Eq)
 
+-- | A docker image tag, eg. 'ubuntu:14.04'
 newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
     deriving (Show, Eq, Hashable, Ord)
 
+-- | An actual docker image id
 newtype DockerImageId
     = DockerImageId { unDockerImageId :: T.Text }
     deriving (Show, Eq, Hashable, FromJSON, Ord)
