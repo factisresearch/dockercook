@@ -8,10 +8,11 @@ a tutorial see below or the example directory.
 
 # Install
 
-Requirements: GHC7.6 or GHC7.8 and cabal
+Requirements: GHC7.8 and cabal or stack
 
 * From Hackage: `cabal install dockercook`
 * From Source: `git clone https://github.com/factisresearch/dockercook.git && cd dockercook && cabal install`
+* From Source (stack): `git clone https://github.com/factisresearch/dockercook.git && cd dockercook && stack setup && stack install`
 
 # Commands
 

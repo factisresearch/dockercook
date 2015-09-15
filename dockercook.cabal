@@ -1,5 +1,5 @@
 name:                dockercook
-version:             0.4.4.0
+version:             0.5.0.0
 synopsis:            A build tool for multiple docker image layers
 description:         Build and manage multiple docker image layers to speed up deployment
 license:             MIT
@@ -12,6 +12,7 @@ build-type:          Simple
 homepage:            https://github.com/factisresearch/dockercook
 bug-reports:         https://github.com/factisresearch/dockercook/issues
 cabal-version:       >=1.8
+tested-with:         GHC==7.8.3
 
 extra-source-files:
     test/*.cook
