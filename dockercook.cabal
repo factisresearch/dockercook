@@ -85,7 +85,8 @@ executable dockercook
                        hslogger,
                        optparse-applicative >=0.11.0.1,
                        process,
-                       text
+                       text,
+                       unordered-containers
   hs-source-dirs:      src/prog
   ghc-options: -Wall -fno-warn-orphans -fno-warn-missing-signatures
 

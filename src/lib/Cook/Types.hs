@@ -4,6 +4,7 @@ module Cook.Types where
 import Data.Aeson
 import Data.Hashable
 import qualified Data.ByteString as BS
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 
 newtype DownloadUrl
@@ -19,6 +20,7 @@ data CookConfig
    -- ^ drop this many chars from every cook filename
    , cc_autoPush :: Bool
    , cc_forceRebuild :: Bool
+   , cc_compileVars :: HM.HashMap T.Text T.Text
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 

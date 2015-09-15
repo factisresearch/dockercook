@@ -28,6 +28,7 @@ Available commands:
   check                    Validate a Dockercook file
   sync                     Sync local state with remote docker server
   version                  Show programs version
+  timing                   Looking build times for image
   init                     Enable dockercook for current project / directory
 ```
 
@@ -92,6 +93,10 @@ Copy a file or directory from an image described by `[cookfile]` to
 `/_cookpreps/[target-dir]` in your current context. This can be very
 useful for binary-only containers. Behind the scenes this starts the
 image (entrypoint is set to `""`), uses `docker cp` to extract files and then kills the container.
+
+## COOKVAR [var-name] [default-value]
+
+This allows compile time environment variables. They can be set using `--set-var` (multiple times) with the `dockercook cook` command. The default value is optional. A `COOKVAR` directive is translated to dockers `ENV` command and populated with the correct value. If a `COOKVAR` does not have a default value and is not supplied via `--set-var` the build will fail.
 
 ## All Docker-Commands
 

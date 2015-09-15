@@ -69,6 +69,38 @@ test_parseBuildFile =
           , "\n"
           ]
 
+test_parseCookVar :: IO ()
+test_parseCookVar =
+    do parsed1 <- parseBuildFileText "sample1" sampleFile1 >>= assertRight
+       assertEqual expected1 parsed1
+       parsed2 <- parseBuildFileText "sample2" sampleFile2 >>= assertRight
+       assertEqual expected2 parsed2
+    where
+      expected2 =
+          expected1
+          { bf_requiredVars = V.fromList [("BUILD_MODE", Just "fast")]
+          , bf_name = BuildFileId "sample2"
+          }
+      expected1 =
+          (emptyBuildFile (BuildFileId "sample1") (BuildBaseCook $ BuildFileId "foo.bar"))
+          { bf_requiredVars = V.fromList [("BUILD_MODE", Nothing)]
+          , bf_dockerCommands =
+              V.fromList
+              [Right $ DockerCommand "RUN" "echo $BUILD_MODE"]
+          }
+      sampleFile1 =
+          T.unlines
+          [ "BASE COOK foo.bar"
+          , "COOKVAR BUILD_MODE"
+          , "RUN echo $BUILD_MODE"
+          ]
+      sampleFile2 =
+          T.unlines
+          [ "BASE COOK foo.bar"
+          , "COOKVAR BUILD_MODE fast"
+          , "RUN echo $BUILD_MODE"
+          ]
+
 test_parseBuildAdvanced :: IO ()
 test_parseBuildAdvanced =
     do t1 <- parseBuildFile "test/parsefail01.cook"

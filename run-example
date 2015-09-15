@@ -3,4 +3,4 @@ cd example
 stack exec dockercook version
 stack exec dockercook init
 stack exec dockercook sync
-stack exec dockercook cook build/project
+stack exec -- dockercook cook --set-var REQUIRED_VAR=hello build/project

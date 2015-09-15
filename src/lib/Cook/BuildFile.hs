@@ -10,7 +10,7 @@ module Cook.BuildFile
     , FilePattern, matchesFilePattern, parseFilePattern
     , UnpackMode(..)
     -- don't use - only exported for testing
-    , parseBuildFileText
+    , parseBuildFileText, emptyBuildFile
     )
 where
 
@@ -58,6 +58,7 @@ data BuildFile
    , bf_downloadDeps :: V.Vector DownloadUrl
    , bf_transactions :: HM.HashMap TxRef (V.Vector T.Text)
    , bf_cookCopy :: HM.HashMap FilePath [(FilePath, FilePath)]
+   , bf_requiredVars :: V.Vector (T.Text, Maybe T.Text)
    } deriving (Show, Eq)
 
 data BuildBase
@@ -66,16 +67,26 @@ data BuildBase
    deriving (Show, Eq)
 
 data BuildFileLine
-   = IncludeLine FilePattern    -- copy files from data directory to temporary cook directory
-   | BaseLine BuildBase         -- use either cook file or docker image as base
-   | PrepareLine T.Text         -- run shell command in temporary cook directory
-   | UnpackLine FilePath        -- where should the context be unpacked to?
-   | ScriptLine FilePath (Maybe T.Text)  -- execute a script in cook directory to generate more cook commands
+   = IncludeLine FilePattern
+   -- ^ copy files from data directory to temporary cook directory
+   | BaseLine BuildBase
+   -- ^ use either cook file or docker image as base
+   | PrepareLine T.Text
+   -- ^ run shell command in temporary cook directory
+   | UnpackLine FilePath
+   -- ^ where should the context be unpacked to?
+   | ScriptLine FilePath (Maybe T.Text)
+   -- ^ execute a script in cook directory to generate more cook commands
    | BeginTxLine
    | CommitTxLine
-   | DownloadLine DownloadUrl FilePath  -- download a file to a location
-   | CookCopyLine FilePath FilePath FilePath -- copy a file or folder from a cook-image to the _cookprep folder
-   | DockerLine DockerCommand   -- regular docker command
+   | DownloadLine DownloadUrl FilePath
+   -- ^ download a file to a location
+   | CookCopyLine FilePath FilePath FilePath
+   -- ^ copy a file or folder from a cook-image to the _cookprep folder
+   | RequireEnvVarLine (T.Text, Maybe T.Text)
+   -- ^ require a compile time environment variable with an optional default
+   | DockerLine DockerCommand
+   -- ^ regular docker command
    deriving (Show, Eq)
 
 data DockerCommand
@@ -188,27 +199,30 @@ copyTarAndUnpack um tarName imageDest =
       ++ " && rm -rf /" ++ tarName
     ]
 
+emptyBuildFile :: BuildFileId -> BuildBase -> BuildFile
+emptyBuildFile myId base =
+    BuildFile
+    { bf_name = myId
+    , bf_base = base
+    , bf_unpackTarget = Nothing
+    , bf_dockerCommands = V.empty
+    , bf_include = V.empty
+    , bf_prepare = V.empty
+    , bf_downloadDeps = V.empty
+    , bf_transactions = HM.empty
+    , bf_cookCopy = HM.empty
+    , bf_requiredVars = V.empty
+    }
+
 
 constructBuildFile :: FilePath -> FilePath -> [BuildFileLine] -> IO (Either String BuildFile)
 constructBuildFile cookDir fp theLines =
     case baseLine of
       Just (BaseLine base) ->
-          baseCheck base $ handleLine (Right (initBuildFile base)) Nothing theLines
+          baseCheck base $ handleLine (Right (emptyBuildFile myId base)) Nothing theLines
       _ ->
           return $ Left "Missing BASE line!"
     where
-      initBuildFile base =
-          BuildFile
-          { bf_name = myId
-          , bf_base = base
-          , bf_unpackTarget = Nothing
-          , bf_dockerCommands = V.empty
-          , bf_include = V.empty
-          , bf_prepare = V.empty
-          , bf_downloadDeps = V.empty
-          , bf_transactions = HM.empty
-          , bf_cookCopy = HM.empty
-          }
       checkDocker (DockerCommand cmd _) action =
           let lowerCmd = T.toLower cmd
           in case lowerCmd of
@@ -274,6 +288,13 @@ constructBuildFile cookDir fp theLines =
                                   (Just nextTxId) rest
                        CommitTxLine ->
                            return $ Left "COMMIT is missing a BEGIN!"
+                       RequireEnvVarLine var ->
+                           handleLine
+                              (Right $ buildFile
+                                         { bf_requiredVars = V.snoc (bf_requiredVars buildFile) var
+                                         }
+                              )
+                              inTx rest
                        _ ->
                            handleLine mBuildFile inTx rest
       cookCopyLine cookFile containerPath hostPath buildFile =
@@ -354,7 +375,17 @@ pBuildFile =
           CommitTxLine <$ (pCommitTx <* finish) <|>
           (pDownloadLine <* finish) <|>
           (pCookCopyLine <* finish) <|>
+          RequireEnvVarLine <$> (pCookVar <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
+
+pCookVar :: Parser (T.Text, Maybe T.Text)
+pCookVar =
+    asciiCI "COOKVAR" *> skipSpace *> valP <* skipSpace
+    where
+      valP =
+          (,)
+          <$> (takeWhile1 (\x -> isAlphaNum x || x == '_'))
+          <*> (optional $ T.strip <$> takeWhile1 (not . eolOrComment))
 
 pBeginTx :: Parser ()
 pBeginTx = asciiCI "BEGIN" *> skipSpace

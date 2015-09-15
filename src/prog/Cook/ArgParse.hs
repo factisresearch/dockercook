@@ -1,8 +1,11 @@
+{-# LANGUAGE OverloadedStrings #-}
 module Cook.ArgParse (argParse, CookCmd(..)) where
 
 import Cook.Types
 
+import Data.List (foldl')
 import Options.Applicative
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 
 data CookCmd
@@ -56,8 +59,20 @@ cookOptions =
                 <*> cookTagP
                 <*> cookFileDropP
                 <*> (switch (long "push" <> help "Push built docker containers"))
-                <*> (switch (long "force-rebuild" <> help "Rebuild all docker images regardless of dependency changes"))
-                <*> cookFilesP)
+                <*> (switch (long "force-rebuild"
+                             <> help "Rebuild all docker images regardless of dependency changes"))
+                <*> (packHM <$>
+                     many (strOption $ long "set-var"
+                           <> help "set a compile time environment variable. Format: NAME=value"))
+                <*> cookFilesP
+
+    )
+    where
+      packHM =
+          foldl' (\hm x ->
+                      let (key, val) = T.breakOn "=" (T.pack x)
+                      in HM.insert key (T.drop 1 val) hm
+                 ) HM.empty
 
 cookSync :: Parser CookCmd
 cookSync = pure CookSync
