@@ -12,6 +12,7 @@ import Cook.Util
 import Cook.State.Manager
 
 import Data.List (foldl')
+import Data.Aeson.Encode.Pretty (encodePretty)
 import Control.Monad
 import Options.Applicative
 import System.Exit
@@ -19,6 +20,9 @@ import System.Log
 import System.Directory
 import System.FilePath
 import System.Process
+import qualified Data.ByteString.Lazy as BSL
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
 
 runProg :: (Int, CookCmd) -> IO ()
 runProg (verb, cmd) =
@@ -67,6 +71,11 @@ runProg' cmd =
           do createDirectoryIfMissing True _STATE_DIR_NAME_
              _ <- createStateManager _STATE_DIR_NAME_
              putStrLn "My kitchen is ready for cooking!"
+      CookTiming opt ->
+          do stateDir <- findStateDirectory
+             (mgr, _) <- createStateManager stateDir
+             res <- getImageBuildTime mgr opt
+             T.putStrLn $ T.decodeUtf8 $ BSL.toStrict $ encodePretty res
 
 main :: IO ()
 main =

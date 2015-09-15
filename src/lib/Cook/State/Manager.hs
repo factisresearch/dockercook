@@ -10,6 +10,7 @@ module Cook.State.Manager
     , isImageKnown, fastFileHash
     , syncImages, waitForWrites
     , getImageId, setImageId, setImageBuildTime
+    , ImageBuildTime(..), getImageBuildTime
     , _STATE_DIR_NAME_, findStateDirectory
     )
 where
@@ -28,6 +29,7 @@ import Control.Monad.Logger hiding (logInfo, logDebug, logError, logWarn)
 import Control.Monad.State
 import Control.Monad.Trans.Resource
 import Control.Retry
+import Data.Aeson
 import Data.Maybe
 import Data.Time
 import Data.Time.Clock.POSIX
@@ -293,3 +295,39 @@ markUsingImage (StateManager{..}) (DockerImage imageName) dh =
              sm_runSqlGet $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1
                                                            , DbDockerImageLastUsed =. now
                                                            ]
+
+data ImageBuildTime
+   = ImageBuildTime
+   { ibt_host :: !Docker.DockerHostId
+   , ibt_imageId :: !(Maybe DockerImageId)
+   , ibt_cookId :: !DockerImage
+   , ibt_seconds :: !Double
+   } deriving (Show, Eq)
+
+instance ToJSON ImageBuildTime where
+    toJSON ibt =
+        object
+        [ "host" .= ibt_host ibt
+        , "imageId" .= ibt_imageId ibt
+        , "cookId" .= ibt_cookId ibt
+        , "seconds" .= ibt_seconds ibt
+        ]
+
+getImageBuildTime :: StateManager -> Either DockerImage DockerImageId -> IO [ImageBuildTime]
+getImageBuildTime (StateManager{..}) search =
+    do res <- sm_runSqlGet $ selectList filters []
+       return $ map transTime res
+    where
+      transTime entity =
+          ImageBuildTime
+          { ibt_host = Docker.DockerHostId (dbDockerImageHost val)
+          , ibt_imageId = fmap DockerImageId (dbDockerImageRawImageId val)
+          , ibt_cookId = DockerImage (dbDockerImageName val)
+          , ibt_seconds = dbDockerImageBuildTimeSeconds val
+          }
+          where
+            val = entityVal entity
+      filters =
+          case search of
+            Left (DockerImage cookImage) -> [ DbDockerImageName ==. cookImage ]
+            Right (DockerImageId imageId) -> [ DbDockerImageRawImageId ==. Just imageId ]

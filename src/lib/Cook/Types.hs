@@ -37,9 +37,9 @@ newtype SHA1 =
 -- | A docker image tag, eg. 'ubuntu:14.04'
 newtype DockerImage =
     DockerImage { unDockerImage :: T.Text }
-    deriving (Show, Eq, Hashable, Ord)
+    deriving (Show, Eq, Hashable, Ord, FromJSON, ToJSON)
 
 -- | An actual docker image id
 newtype DockerImageId
     = DockerImageId { unDockerImageId :: T.Text }
-    deriving (Show, Eq, Hashable, FromJSON, Ord)
+    deriving (Show, Eq, Hashable, FromJSON, ToJSON, Ord)

@@ -1,7 +1,9 @@
 module Cook.ArgParse (argParse, CookCmd(..)) where
 
 import Cook.Types
+
 import Options.Applicative
+import qualified Data.Text as T
 
 data CookCmd
    = CookBuild CookConfig
@@ -9,6 +11,7 @@ data CookCmd
    | CookSync
    | CookVersion Bool
    | CookInit
+   | CookTiming (Either DockerImage DockerImageId)
    deriving (Show, Eq)
 
 cookTagP :: Parser (Maybe String)
@@ -68,6 +71,24 @@ cookVersion =
     CookVersion
     <$> (switch $ long "numeric" <> help "Show numeric version")
 
+cookTiming :: Parser CookCmd
+cookTiming =
+    CookTiming <$>
+    (((Left . DockerImage . T.pack) <$> cookTag) <|> ((Right . DockerImageId . T.pack) <$> imageId))
+    where
+      imageId =
+          strOption $
+          long "by-imageid" <>
+          metavar "DOCKER-IMAGE-ID" <>
+          help ("Raw docker image id, eg "
+                ++ "167ee78730362ee7519db49ddf13cbf9be79a2047a19468d69d1912fac368af8")
+      cookTag =
+          strOption $
+          long "by-cooktag" <>
+          metavar "COOK-IMAGE-TAG" <>
+          help ("Tag given to the image by dockercook, eg "
+                ++ "cook-bcff3116a3b067e4fcbbdcc1dcca6cbd67da7efa")
+
 argParse :: Parser (Int, CookCmd)
 argParse =
     (,) <$> cookVerboseP <*> argParse'
@@ -79,5 +100,6 @@ argParse' =
     <> command "check" (info cookParse ( progDesc "Validate a Dockercook file" ))
     <> command "sync" (info cookSync ( progDesc "Sync local state with remote docker server" ))
     <> command "version" (info cookVersion ( progDesc "Show programs version" ))
+    <> command "timing" (info cookTiming ( progDesc "Looking build times for image" ))
     <> command "init" (info (pure CookInit) ( progDesc "Enable dockercook for current project / directory" ))
     )

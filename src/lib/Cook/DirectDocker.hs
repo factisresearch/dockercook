@@ -2,7 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Cook.DirectDocker
-    ( DockerHostId, dockerHostIdAsText
+    ( DockerHostId(..), dockerHostIdAsText
     , dockerInfo, DockerInfo(..)
     , dockerImageId, dockerInspectImage, DockerImageInfo(..)
     , dockerImages, DockerImageListInfo(..)
@@ -35,7 +35,7 @@ newtype DockerBaseUrl
 
 newtype DockerHostId
     = DockerHostId { unDockerHostId :: T.Text }
-      deriving (Show, Eq, FromJSON)
+      deriving (Show, Eq, FromJSON, ToJSON)
 
 dockerHostIdAsText :: DockerHostId -> T.Text
 dockerHostIdAsText = unDockerHostId
