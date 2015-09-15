@@ -126,15 +126,18 @@ withDockerBaseUrl action =
     do host <- getEnv "DOCKER_HOST"
        action $ DockerBaseUrl $ T.replace "tcp://" "http://" (T.pack host) <> "/v1.19/"
 
+-- | Retrieve information about the remote docker host
 dockerInfo :: IO (Maybe DockerInfo)
 dockerInfo =
     withDockerBaseUrl $ \(DockerBaseUrl url) ->
     do r <- asJSON =<< get (T.unpack url <> "info")
        return (r ^? responseBody)
 
+-- | Get the image id providing an image tag
 dockerImageId :: DockerImage -> IO (Maybe DockerImageId)
 dockerImageId di = liftM (fmap dii_id) $ dockerInspectImage di
 
+-- | Looking information about an image provided an image tag
 dockerInspectImage :: DockerImage -> IO (Maybe DockerImageInfo)
 dockerInspectImage (DockerImage name) =
     action `catch` \(_ :: HttpException) -> return Nothing
@@ -144,6 +147,7 @@ dockerInspectImage (DockerImage name) =
           do r <- asJSON =<< get (T.unpack url <> "images/" <> T.unpack name <> "/json")
              return (r ^? responseBody)
 
+-- | List docker images on remote docker host
 dockerImages :: IO (Maybe [DockerImageListInfo])
 dockerImages =
     withDockerBaseUrl $ \(DockerBaseUrl url) ->
@@ -153,10 +157,12 @@ dockerImages =
 newtype DockerImagesCache
     = DockerImagesCache { unDockerImagesCache :: TVar (Maybe (S.Set DockerTag, S.Set DockerImageId)) }
 
+-- | Create new cache for 'doesImageExist'
 newDockerImagesCache :: IO DockerImagesCache
 newDockerImagesCache =
     DockerImagesCache <$> newTVarIO Nothing
 
+-- | Check if an image exists on remote docker host
 doesImageExist :: DockerImagesCache -> Either DockerImage DockerImageId -> IO Bool
 doesImageExist (DockerImagesCache cacheVar) eImage =
     do cacheData <-
