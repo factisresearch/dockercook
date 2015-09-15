@@ -314,7 +314,18 @@ buildImage hostInfo rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManage
                Just (StreamHook hook) -> hook bs
       dockerImageExists localIm@(DockerImage imageName) =
           do logDebug' $ "Checking if the image " ++ show imageName ++ " is already present... "
-             known <- isImageKnown stateManager localIm (Docker.di_id hostInfo)
+             known <-
+                 do locallyKnown <- isImageKnown stateManager localIm (Docker.di_id hostInfo)
+                    if locallyKnown
+                    then do remotelyKnown <- Docker.doesImageExist imCache (Left localIm)
+                            unless remotelyKnown $
+                                   do logInfo $
+                                         "My local state is not up to date with the remote host. "
+                                         ++ "Forgetting " ++ show imageName
+                                         ++ " for now and rebuilding it."
+                                      forgetImage stateManager localIm (Docker.di_id hostInfo)
+                            return remotelyKnown
+                    else return False
              mRawImageId <- getImageId stateManager localIm (Docker.di_id hostInfo)
              let storeRawId =
                      unless (isJust mRawImageId) $

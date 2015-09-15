@@ -6,6 +6,7 @@
 module Cook.State.Manager
     ( StateManager, HashManager(..)
     , createStateManager, markUsingImage
+    , forgetImage
     , isImageKnown, fastFileHash
     , syncImages, waitForWrites
     , getImageId, setImageId
@@ -252,6 +253,11 @@ isImageKnown :: StateManager -> DockerImage -> Docker.DockerHostId -> IO Bool
 isImageKnown (StateManager{..}) (DockerImage imageName) dh =
     do x <- sm_runSqlGet $ getBy (UniqueDbDockerImage imageName $ Docker.dockerHostIdAsText dh)
        return (isJust x)
+
+forgetImage :: StateManager -> DockerImage -> Docker.DockerHostId -> IO ()
+forgetImage (StateManager{..}) (DockerImage imageName) dh =
+    do sm_runSqlWrite $ deleteBy (UniqueDbDockerImage imageName $ Docker.dockerHostIdAsText dh)
+       sm_waitForWrites
 
 getImageId :: StateManager -> DockerImage -> Docker.DockerHostId -> IO (Maybe DockerImageId)
 getImageId (StateManager{..}) (DockerImage imageName) dh =
