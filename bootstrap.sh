@@ -1,4 +1,3 @@
 #!/bin/bash
-DOCKERCOOK=dist/build/dockercook/dockercook
-"$DOCKERCOOK" init
-"$DOCKERCOOK" cook -d . -b bootstrap/ -i .gitignore -t dockercook_ bin-img.cook
+stack exec dockercook init
+stack exec -- dockercook cook -i .gitignore -t dockercook_ bootstrap/bin-img.cook

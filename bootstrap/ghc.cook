@@ -9,12 +9,9 @@ RUN cd ghc-7.8.3 && make install
 RUN rm -rf ghc.tar.bz2 ghc-7.8.3
 COMMIT
 
-# Install cabal1.22.0.0
-DOWNLOAD https://hackage.haskell.org/package/cabal-install-1.22.0.0/cabal-install-1.22.0.0.tar.gz /cabal-install-1.22.0.0.tar.gz
-BEGIN
-RUN tar xvfz /cabal-install-1.22.0.0.tar.gz
-RUN cd cabal-install-1.22.0.0 && ./bootstrap.sh
-RUN rm -rf /cabal-install-1.22.0.0.tar.gz
-COMMIT
+# Install stack
+RUN wget -q -O- https://s3.amazonaws.com/download.fpcomplete.com/ubuntu/fpco.key | sudo apt-key add -
+RUN echo 'deb http://download.fpcomplete.com/ubuntu/utopic stable main'|sudo tee /etc/apt/sources.list.d/fpco.list
+RUN sudo apt-get update && sudo apt-get install stack -y
 
-ENV PATH $HOME/.cabal/bin:$PATH
+ENV PATH $HOME/.local/bin:$PATH

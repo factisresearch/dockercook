@@ -1,6 +1,7 @@
 BASE COOK cabal-pkg.cook
 INCLUDE src/*
+INCLUDE LICENSE
 UNPACK /cook
 WORKDIR /cook
-RUN cabal configure
-RUN cabal build
+RUN stack build
+RUN mkdir /dist && cp $(stack exec -- which dockercook) /dist/dockercook

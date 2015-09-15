@@ -1,5 +1,5 @@
 BASE COOK ubuntu.cook
-COOKCOPY full-app.cook /cook/dist/build/dockercook/dockercook bin
+COOKCOPY full-app.cook /dist/dockercook bin
 RUN mkdir -p /bin
 RUN mv /_cookpreps/bin/dockercook /bin/dockercook
 RUN chmod +x /bin/dockercook
