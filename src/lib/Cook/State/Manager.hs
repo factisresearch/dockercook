@@ -9,7 +9,7 @@ module Cook.State.Manager
     , forgetImage
     , isImageKnown, fastFileHash
     , syncImages, waitForWrites
-    , getImageId, setImageId
+    , getImageId, setImageId, setImageBuildTime
     , _STATE_DIR_NAME_, findStateDirectory
     )
 where
@@ -29,7 +29,7 @@ import Control.Monad.State
 import Control.Monad.Trans.Resource
 import Control.Retry
 import Data.Maybe
-import Data.Time.Clock
+import Data.Time
 import Data.Time.Clock.POSIX
 import Database.Persist.Sqlite
 import System.Directory
@@ -271,6 +271,14 @@ setImageId :: StateManager -> DockerImage -> DockerImageId -> IO ()
 setImageId (StateManager{..}) (DockerImage imageName) (DockerImageId imageId) =
     sm_runSqlWrite $ updateWhere [ DbDockerImageName ==. imageName ] [ DbDockerImageRawImageId =. (Just imageId) ]
 
+setImageBuildTime :: StateManager -> DockerImage -> Docker.DockerHostId -> NominalDiffTime -> IO ()
+setImageBuildTime (StateManager{..}) (DockerImage imageName) dh t =
+    sm_runSqlWrite $
+    updateWhere
+      [ DbDockerImageName ==. imageName
+      , DbDockerImageHost ==. (Docker.dockerHostIdAsText dh)
+      ] [ DbDockerImageBuildTimeSeconds =. (fromRational $ toRational t) ]
+
 markUsingImage :: StateManager -> DockerImage -> Docker.DockerHostId -> IO ()
 markUsingImage (StateManager{..}) (DockerImage imageName) dh =
     do let hostId = Docker.dockerHostIdAsText dh
@@ -279,7 +287,7 @@ markUsingImage (StateManager{..}) (DockerImage imageName) dh =
        case mImageEntity of
          Nothing ->
              sm_runSqlWrite $
-             do _ <- insert $ DbDockerImage hostId imageName Nothing now now 1
+             do _ <- insert $ DbDockerImage hostId imageName Nothing now now 1 0
                 return ()
          Just imageEntity ->
              sm_runSqlGet $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1

@@ -22,6 +22,7 @@ DbDockerImage
     creationDate UTCTime
     lastUsed UTCTime
     usageCount Int
+    buildTimeSeconds Double
     UniqueDbDockerImage name host
     deriving Show
 DbHashCache

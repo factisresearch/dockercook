@@ -22,6 +22,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Conduit
 import Data.Maybe (fromMaybe, isJust, catMaybes)
+import Data.Time (getCurrentTime, diffUTCTime)
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -272,10 +273,11 @@ buildImage hostInfo rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManage
                                     )
                    unless (cc_forceRebuild) $ logDebug' "Image not found!"
                    mkPrepareTar
-                   x <- launchImageBuilder dockerBS imageName buildTempDir
+                   (x, buildTime) <- launchImageBuilder dockerBS imageName buildTempDir
                    mTag <- markImage
+                   setImageBuildTime stateManager imageName (Docker.di_id hostInfo) buildTime
                    announceBegin
-                   hPutStrLn stderr ("built " ++ nameTagArrow)
+                   hPutStrLn stderr ("built " ++ nameTagArrow ++ " (" ++ show buildTime ++ ")")
                    withRawImageId imageName $ \imageId ->
                      do logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
                         setImageId stateManager imageName imageId
@@ -376,9 +378,11 @@ buildImage hostInfo rootDir imCache mStreamHook cfg@(CookConfig{..}) stateManage
              BS.writeFile (tempDir </> "Dockerfile") dockerBS
              logDebug' ("Building " ++ name ++ "...")
              let tag = T.unpack $ unDockerImage imageName
+             started <- getCurrentTime
              ecDocker <- systemStream Nothing ("docker build --no-cache --force-rm --rm -t " ++ tag ++ " " ++ tempDir) streamHook
              if ecDocker == ExitSuccess
-               then return imageName
+               then do finished <- getCurrentTime
+                       return (imageName, finished `diffUTCTime` started)
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
                        hPutStrLn stderr ("Failing Cookfile: "
                                          ++ T.unpack (unBuildFileId (bf_name bf)))
