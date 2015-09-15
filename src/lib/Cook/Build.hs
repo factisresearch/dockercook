@@ -118,6 +118,10 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                  liftIO $ hPutStr stderr "."
                  return $ Just (relToCurrentF, hash)
 
+runPrepareCommands ::
+    FilePath -> FilePath -> BuildFile -> (BSC.ByteString -> IO ())
+    -> [(DockerImage, [(FilePath, FilePath)])]
+    -> IO (Maybe FilePath, IO (), SHA1)
 runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
     do logDebug "Running PREPARE commands"
        let outTar = "_dc_prepared.tar.gz"

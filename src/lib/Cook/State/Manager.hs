@@ -55,6 +55,7 @@ data HashManager
 fastFileHash :: forall m. MonadIO m => HashManager -> FilePath -> m SHA1 -> m SHA1
 fastFileHash hm = hm_lookup hm
 
+_STATE_DIR_NAME_ :: FilePath
 _STATE_DIR_NAME_ = ".kitchen2"
 
 findStateDirectory :: IO FilePath

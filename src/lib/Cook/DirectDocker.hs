@@ -7,26 +7,27 @@ module Cook.DirectDocker
     , dockerImageId, dockerInspectImage, DockerImageInfo(..)
     , dockerImages, DockerImageListInfo(..)
     , newDockerImagesCache, doesImageExist, DockerImagesCache(..)
+    , DockerTag(..), DockerTagVersion(..), parseDockerTag
     )
 where
 
 import Cook.Types
 import Cook.Util
 
-import Data.Monoid
-import qualified Data.Text as T
-
-import Control.Monad
-import Control.Concurrent.STM
-import Data.Aeson
-import Control.Exception
 import Control.Applicative
+import Control.Concurrent.STM
+import Control.Exception
 import Control.Lens ((^?))
-import Network.Wreq
+import Control.Monad
+import Data.Aeson
+import Data.Char (isDigit)
+import Data.List (foldl')
+import Data.Monoid
 import Network.HTTP.Client (HttpException(..))
+import Network.Wreq
 import System.Environment
 import qualified Data.Set as S
-import Data.List (foldl')
+import qualified Data.Text as T
 
 newtype DockerBaseUrl
     = DockerBaseUrl { _unDockerBaseUrl :: T.Text }
@@ -52,22 +53,26 @@ data DockerTagVersion
     deriving (Show, Eq, Ord)
 
 parseDockerTag :: T.Text -> DockerTag
-parseDockerTag tag =
+parseDockerTag rawTag =
     DockerTag
-    { dt_name = h
+    { dt_name = host
     , dt_version =
-        case t of
+        case tag of
           "" -> DockerTagVersionLatest
           "latest" -> DockerTagVersionLatest
           "<none>" -> DockerTagVersionNone
           xs -> DockerTagVersionOther xs
     }
     where
-      (h, t) =
-          if T.isInfixOf ":" tag
-          then let (a, b) = T.breakOn ":" (T.reverse tag)
+      (host, tag) =
+          if T.isInfixOf "/" tag' && T.length (T.takeWhile isDigit tag') >= 2
+          then (host' <> ":" <> tag', "")
+          else (host', tag')
+      (host', tag') =
+          if T.isInfixOf ":" rawTag
+          then let (a, b) = T.breakOn ":" (T.reverse rawTag)
                in (T.take (T.length b - 1) $ T.reverse b, T.reverse a)
-          else (tag, "")
+          else (rawTag, "")
 
 instance FromJSON DockerTag where
     parseJSON =

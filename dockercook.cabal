@@ -22,15 +22,15 @@ library
   exposed-modules:
                        Cook.Build,
                        Cook.BuildFile,
+                       Cook.DirectDocker,
+                       Cook.Downloads,
                        Cook.State.Manager,
                        Cook.Sync,
                        Cook.Types,
                        Cook.Uploader,
-                       Cook.Util,
-                       Cook.Downloads
+                       Cook.Util
   other-modules:
                        Cook.Docker,
-                       Cook.DirectDocker,
                        Cook.State.Model
   build-depends:
                        attoparsec >=0.11,
@@ -90,7 +90,8 @@ test-suite dockercook-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      src/test
   main-is:             Tests.hs
-  other-modules:       Tests.BuildFile
+  other-modules:       Tests.BuildFile,
+                       Tests.DirectDocker
   build-depends:
                        HTF >=0.12.2.3,
                        base >=4.6 && <5,
