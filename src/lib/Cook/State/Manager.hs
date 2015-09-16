@@ -289,7 +289,17 @@ markUsingImage (StateManager{..}) (DockerImage imageName) dh =
        case mImageEntity of
          Nothing ->
              sm_runSqlWrite $
-             do _ <- insert $ DbDockerImage hostId imageName Nothing now now 1 0
+             do _ <-
+                    insert $
+                    DbDockerImage
+                    { dbDockerImageHost = hostId
+                    , dbDockerImageName = imageName
+                    , dbDockerImageRawImageId = Nothing
+                    , dbDockerImageCreationDate = now
+                    , dbDockerImageLastUsed = now
+                    , dbDockerImageUsageCount = 1
+                    , dbDockerImageBuildTimeSeconds = 0
+                    }
                 return ()
          Just imageEntity ->
              sm_runSqlGet $ update (entityKey imageEntity) [ DbDockerImageUsageCount +=. 1
