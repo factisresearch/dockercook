@@ -1,9 +1,9 @@
 ;;; cookfile-mode.el --- Support for editing dockercook files
-;; Copyright (C) 2014 factis research GmbH
+;; Copyright (C) 2014-2015 factis research GmbH
 ;;
 ;; Author: David Leuschner <leuschner@factisresearch.com>
 ;; Created: 2014-08-19
-;; Version: 0.0.2
+;; Version: 0.0.3
 ;;
 ;; This file is not part of GNU Emacs.
 ;;
@@ -12,7 +12,7 @@
 
 (defvar cook-keywords '("INCLUDE" "UNPACK" "BASE COOK" "BASE DOCKER" "RUN" "CMD" "EXPOSE" "ENV"
                         "ADD" "ENTRYPOINT" "VOLUME" "USER" "WORKDIR" "COPY" "PREPARE" "SCRIPT"
-                        "BEGIN" "COMMIT" "DOWNLOAD" "COOKCOPY"))
+                        "BEGIN" "COMMIT" "DOWNLOAD" "COOKCOPY" "COOKVAR"))
 
 (defvar cook-keywords-regexp
   (concat "^\\s-*" (regexp-opt cook-keywords 'words)))
