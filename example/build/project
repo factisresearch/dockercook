@@ -4,6 +4,8 @@ INCLUDE static/*
 UNPACK /src
 RUN ls -al /src
 RUN jshint /src/repo/hello.js
+# This is a comment that will not be hashed
+NOP This is just a comment that will be hashed
 COOKVAR REQUIRED_VAR
 RUN echo $REQUIRED_VAR
 COOKVAR OPTIONAL_VAR foo

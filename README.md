@@ -35,24 +35,32 @@ Available commands:
 
 # Cookfile Directives
 
-## BASE COOK [cookfile]
+## BASE COOK
+
+* Usage: `BASE COOK <cookfile>`
 
 Define the current cookfiles parent cookfile. You can only use this
 directive once at the top and you can't use it in combination with `BASE
 DOCKER [dockerimage]`.
 
-## BASE DOCKER [dockerimage]
+## BASE DOCKER
+
+* Usage: `BASE DOCKER <docker-image-with-tag>`
 
 The cook-image will depend on an existing docker image. You can only use this
 directive once at the top and you can't use it in combination with `BASE
-DOCKER [dockerimage]`.
+DOCKER <docker-image-with-tag>`. The image-id of the image will be included in the cook-hash.
 
-## INCLUDE [filepattern]
+## INCLUDE
+
+* Usage: `INCLUDE <file-pattern>`
 
 Include and depend on a file. You can use this anywhere in your cook file,
-but it will be moved to the top before `UNPACK [target_dir]`.
+but it will be moved to the top before `UNPACK <target-dir>`.
 
-## UNPACK [target_dir]
+## UNPACK
+
+* Usage: `UNPACK <target-dir>`
 
 All included files will be unpacked to this directory. It will also ensure
 that the directory exists. Requires a tar binary inside your
@@ -60,26 +68,36 @@ docker-container. You can only use this directive once.
 
 ## BEGIN
 
+* Usage: `BEGIN`
+
 Begin a transaction. You can only put `SCRIPT [script]` and `RUN
 [bash_cmd]` commands inside a transaction. All commands inside the
 transaction will result in a single layer.
 
 ## COMMIT
 
-Commit a transaction. This is only possible if you began a transaction ;-)
+* Usage: `COMMIT`
 
-## SCRIPT [script]
+Commit a transaction. This is only possible if you began a transaction.
+
+## SCRIPT
+
+* Usage: `SCRIPT <script>`
 
 Run a bash script and put it's result at the current position in the
 dockerfile.
 
-## DOWNLOAD [url] [filepath]
+## DOWNLOAD
 
-Download a file from `[url]` to `[filepath]` in your docker
+* Usage: `DOWNLOAD <url> <filepath>`
+
+Download a file from `<url>` to `<filepath>` in your docker
 container. The server must set one of the following headers and support
 HEAD requests: Last-Modified, ETag, Content-MD5
 
-## PREPARE [shell-command]
+## PREPARE
+
+* Usage: `PREPARE <shell-command>`
 
 This shell command is executed in an empty directory and is useful to copy
 additional files into the build context. Any file that you copy in the
@@ -88,16 +106,26 @@ from the `/_cookpreps` directory. All `PREPARE` commands in one file will be
 executed in the same preparation directory. For more information check the
 example.
 
-## COOKCOPY [cookfile] [image-dir] [target-dir]
+## COOKCOPY
 
-Copy a file or directory from an image described by `[cookfile]` to
-`/_cookpreps/[target-dir]` in your current context. This can be very
+* Usage: `COOKCOPY <cookfile> <image-dir> <target-dir>`
+
+Copy a file or directory from an image described by `<cookfile>` to
+`/_cookpreps/<target-dir>` in your current context. This can be very
 useful for binary-only containers. Behind the scenes this starts the
 image (entrypoint is set to `""`), uses `docker cp` to extract files and then kills the container.
 
-## COOKVAR [var-name] [default-value]
+## COOKVAR
+
+* Usage: `COOKVAR <var-name> <default-value>`
 
 This allows compile time environment variables. They can be set using `--set-var` (multiple times) with the `dockercook cook` command. The default value is optional. A `COOKVAR` directive is translated to dockers `ENV` command and populated with the correct value. If a `COOKVAR` does not have a default value and is not supplied via `--set-var` the build will fail.
+
+## NOP
+
+* Usage: `NOP <arbitrary-data>`
+
+This allows introducing data to the cook-hash without creating additional layers. Useful in combination with the `SCRIPT` and `PREPARE` commands.
 
 ## All Docker-Commands
 
@@ -107,7 +135,7 @@ commands are not recommended, as the dependencies aren't tracked. The
 
 # Emacs support
 
-There's a basic `cookfile-mode.el` in the repository :-)
+There's a basic `cookfile-mode.el` in the repository.
 
 # Motivation / Tutorial
 
@@ -124,7 +152,7 @@ ADD package.json /app/package.json
 WORKDIR /app
 RUN npm install
 ADD . /app
-CMD node ./app.js 
+CMD node ./app.js
 ```
 
 We have two branches for this nodejs project with the following `package.json`:

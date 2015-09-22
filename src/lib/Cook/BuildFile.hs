@@ -85,6 +85,8 @@ data BuildFileLine
    -- ^ copy a file or folder from a cook-image to the _cookprep folder
    | RequireEnvVarLine (T.Text, Maybe T.Text)
    -- ^ require a compile time environment variable with an optional default
+   | NopLine T.Text
+   -- ^ Do nothing but include the contained text in the cook hash
    | DockerLine DockerCommand
    -- ^ regular docker command
    deriving (Show, Eq)
@@ -273,6 +275,8 @@ constructBuildFile cookDir fp theLines =
                            handleLine (downloadLine url target buildFile) inTx rest
                        ScriptLine scriptLoc mArgs ->
                            handleScriptLine scriptLoc mArgs buildFile inTx rest
+                       NopLine stuff ->
+                           handleNopLine stuff buildFile inTx rest
                        DockerLine dockerCmd ->
                            checkDocker dockerCmd $
                            handleLine (Right $ buildFile { bf_dockerCommands = V.snoc (bf_dockerCommands buildFile) (Right dockerCmd) }) inTx rest
@@ -297,6 +301,13 @@ constructBuildFile cookDir fp theLines =
                               inTx rest
                        _ ->
                            handleLine mBuildFile inTx rest
+      handleNopLine stuff buildFile inTx rest =
+          let hdl x = handleLine (Right x) inTx rest
+          in hdl $
+             buildFile
+             { bf_dockerCommands =
+                   V.snoc (bf_dockerCommands buildFile) (Right $ DockerCommand "#" stuff)
+             }
       cookCopyLine cookFile containerPath hostPath buildFile =
           Right $
           buildFile
@@ -369,6 +380,7 @@ pBuildFile =
           IncludeLine <$> (pIncludeLine <* finish) <|>
           BaseLine <$> (pBuildBase <* finish) <|>
           PrepareLine <$> (pPrepareLine <* finish) <|>
+          NopLine <$> (pNopLine <* finish) <|>
           UnpackLine <$> (pUnpackLine <* finish) <|>
           (pScriptLine <* finish) <|>
           BeginTxLine <$ (pBeginTx <* finish) <|>
@@ -445,6 +457,10 @@ pScriptLine =
 pPrepareLine :: Parser T.Text
 pPrepareLine =
     (asciiCI "PREPARE" *> skipSpace) *> takeWhile1 (not . eolOrComment)
+
+pNopLine :: Parser T.Text
+pNopLine =
+    (asciiCI "NOP" *> skipSpace) *> takeWhile1 (not . eolOrComment)
 
 pFilePattern :: Parser FilePattern
 pFilePattern =
