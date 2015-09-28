@@ -8,6 +8,7 @@ module Cook.Build (cookBuild, cookParse) where
 
 import Cook.BuildFile
 import Cook.State.Manager
+import Cook.Extensions
 import Cook.Types
 import Cook.Uploader
 import Cook.Util
@@ -24,6 +25,7 @@ import Data.Conduit
 import Data.Maybe (fromMaybe, isJust, catMaybes)
 import Data.Monoid
 import Data.Time (getCurrentTime, diffUTCTime)
+import Path (parseAbsDir)
 import System.Directory
 import System.Exit
 import System.FilePath
@@ -165,6 +167,7 @@ data BuildEnv
    , be_hashManager :: HashManager
    , be_fileHashes :: [(FP.FilePath, SHA1)]
    , be_uploader :: Uploader
+   , be_extensions :: [Extension]
    }
 
 buildImage :: BuildEnv -> (BuildFile, FilePath) -> IO DockerImage
@@ -175,7 +178,9 @@ buildImage env (bf, bfRootDir) =
        baseImage <-
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
-                 do parent <- prepareEntryPoint $ buildFileIdAddParent bfRootDir parentBuildFile
+                 do parent <-
+                        prepareEntryPoint (buildFileIdAddParent bfRootDir parentBuildFile)
+                           (be_extensions env)
                     buildImage env (parent, bfRootDir)
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
@@ -202,7 +207,10 @@ buildImage env (bf, bfRootDir) =
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
        cookCopyHm <-
            forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
-               do cookPrep <- prepareEntryPoint (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cookFile)
+               do cookPrep <-
+                      prepareEntryPoint
+                      (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cookFile)
+                      (be_extensions env)
                   image <- buildImage env (cookPrep, bfRootDir)
                   return (image, files)
        (mTar, mkPrepareTar, prepareHash) <-
@@ -436,9 +444,12 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
     do (stateManager, hashManager) <- createStateManager stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring) rootDir
+       extDirPaths <- mapM (canonicalizePath >=> parseAbsDir) cc_extensionDirs
+       exts <- concat <$> mapM findExtensions extDirPaths
+       logInfo ("Active extensions: " ++ T.unpack (T.intercalate ", " (map e_command exts)))
        roots <-
            mapM (\entryPointFile ->
-                     (,) <$> (prepareEntryPoint . BuildFileId . T.pack) entryPointFile
+                     (,) <$> prepareEntryPoint (BuildFileId $ T.pack entryPointFile) exts
                          <*> return (takeDirectory entryPointFile)
                 ) cc_buildEntryPoints
        hostInfo <-
@@ -467,6 +478,7 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
                , be_hashManager = hashManager
                , be_fileHashes = fileHashes
                , be_uploader = uploader
+               , be_extensions = exts
                }
        res <- mapM (buildImage buildEnv) roots
        waitForWrites stateManager
@@ -478,9 +490,9 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
       isBoring boring fp =
           any (isJust . flip matchRegex (FP.encodeString fp)) boring
 
-cookParse :: FilePath -> IO ()
-cookParse fp =
-    do mRes <- parseBuildFile fp
+cookParse :: FilePath -> [Extension] -> IO ()
+cookParse fp exts =
+    do mRes <- parseBuildFile fp exts
        case mRes of
          Left errMsg ->
              fail ("Failed to parse cook file " ++ show fp ++ ": " ++ errMsg)
@@ -488,9 +500,9 @@ cookParse fp =
              do putStrLn $ ("Parsed " ++ show fp ++ ", content: " ++ show ep)
                 return ()
 
-prepareEntryPoint :: BuildFileId -> IO BuildFile
-prepareEntryPoint (BuildFileId entryPoint) =
-    do mRes <- parseBuildFile (T.unpack entryPoint)
+prepareEntryPoint :: BuildFileId -> [Extension] -> IO BuildFile
+prepareEntryPoint (BuildFileId entryPoint) exts =
+    do mRes <- parseBuildFile (T.unpack entryPoint) exts
        case mRes of
          Left errMsg ->
              error ("Failed to parse EntryPoint " ++ show entryPoint ++ ": " ++ errMsg)

@@ -10,3 +10,5 @@ COOKVAR REQUIRED_VAR
 RUN echo $REQUIRED_VAR
 COOKVAR OPTIONAL_VAR foo
 RUN echo $OPTIONAL_VAR
+DOWNLOAD/WITH-MD5 d6117be581142bbecb4e1dda029ad323 https://raw.githubusercontent.com/nodejs/node/7d927ab506800428e4fbfc118b0efd414183487e/AUTHORS /tmp/foooo
+RUN cat /tmp/foooo | head

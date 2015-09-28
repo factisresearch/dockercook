@@ -10,10 +10,11 @@ module Cook.BuildFile
     , FilePattern, matchesFilePattern, parseFilePattern
     , UnpackMode(..)
     -- don't use - only exported for testing
-    , parseBuildFileText, emptyBuildFile
+    , parseBuildFileText, parseOnlyBuildFile, emptyBuildFile, BuildFileLine(..)
     )
 where
 
+import Cook.Extensions
 import Cook.Types
 import Cook.Util
 
@@ -24,6 +25,7 @@ import Data.Char
 import Data.Hashable
 import Data.List (find)
 import Data.Maybe
+import Path (toFilePath)
 import System.Exit (ExitCode(..))
 import System.FilePath
 import System.IO.Temp
@@ -87,6 +89,8 @@ data BuildFileLine
    -- ^ require a compile time environment variable with an optional default
    | NopLine T.Text
    -- ^ Do nothing but include the contained text in the cook hash
+   | ExtensionLine Extension [T.Text]
+   -- ^ an extension with it's arguments
    | DockerLine DockerCommand
    -- ^ regular docker command
    deriving (Show, Eq)
@@ -216,9 +220,13 @@ emptyBuildFile myId base =
     , bf_requiredVars = V.empty
     }
 
-
-constructBuildFile :: FilePath -> FilePath -> [BuildFileLine] -> IO (Either String BuildFile)
-constructBuildFile cookDir fp theLines =
+constructBuildFile ::
+    FilePath
+    -> FilePath
+    -> [Extension]
+    -> [BuildFileLine]
+    -> IO (Either String BuildFile)
+constructBuildFile cookDir fp exts theLines =
     case baseLine of
       Just (BaseLine base) ->
           baseCheck base $ handleLine (Right (emptyBuildFile myId base)) Nothing theLines
@@ -264,6 +272,8 @@ constructBuildFile cookDir fp theLines =
                            checkDocker dockerCmd $ handleLineTx dockerCmd buildFile currentTx rest
                        ScriptLine scriptLoc mArgs ->
                            handleScriptLine scriptLoc mArgs buildFile inTx rest
+                       ExtensionLine ext args ->
+                           handleExtLine ext args buildFile inTx rest
                        CommitTxLine ->
                            handleLine (Right buildFile) Nothing rest
                        _ -> return $ Left "Only RUN and SCRIPT commands are allowed in transactions"
@@ -299,8 +309,24 @@ constructBuildFile cookDir fp theLines =
                                          }
                               )
                               inTx rest
+                       ExtensionLine ext args ->
+                           handleExtLine ext args buildFile inTx rest
                        _ ->
                            handleLine mBuildFile inTx rest
+      handleExtLine ext args buildFile inTx rest =
+          do let bashCmd = (toFilePath $ e_location ext) ++ " " ++ T.unpack (T.intercalate " " args)
+             (ec, stdOut, stdErr) <-
+                 readProcessWithExitCode "bash" ["-c", bashCmd] ""
+             logDebug ("Extension " ++ bashCmd ++ " returned: \n" ++ stdOut ++ "\n" ++ stdErr)
+             if ec == ExitSuccess
+             then case parseOnly (pBuildFile exts) (T.pack stdOut) of
+                    Left parseError ->
+                        return $ Left ("Failed to parse output of EXTENSION line " ++ bashCmd
+                                       ++ ": " ++ parseError ++ "\nOutput was:\n" ++ stdOut)
+                    Right moreLines ->
+                        handleLine (Right buildFile) inTx (moreLines ++ rest)
+             else return $ Left ("Failed to run EXTENSION line " ++ bashCmd
+                                 ++ ": " ++ stdOut ++ "\n" ++ stdErr)
       handleNopLine stuff buildFile inTx rest =
           let hdl x = handleLine (Right x) inTx rest
           in hdl $
@@ -328,7 +354,7 @@ constructBuildFile cookDir fp theLines =
                  readProcessWithExitCode "bash" ["-c", bashCmd] ""
              logDebug ("SCRIPT " ++ bashCmd ++ " returned: \n" ++ stdOut ++ "\n" ++ stdErr)
              if ec == ExitSuccess
-             then case parseOnly pBuildFile (T.pack stdOut) of
+             then case parseOnly (pBuildFile exts) (T.pack stdOut) of
                     Left parseError ->
                         return $ Left ("Failed to parse output of SCRIPT line " ++ bashCmd
                                        ++ ": " ++ parseError ++ "\nOutput was:\n" ++ stdOut)
@@ -347,18 +373,21 @@ constructBuildFile cookDir fp theLines =
                           }
                   handleLine (Right buildFile') (Just txRef) rest
 
-parseBuildFile :: FilePath -> IO (Either String BuildFile)
-parseBuildFile fp =
+parseBuildFile :: FilePath -> [Extension] -> IO (Either String BuildFile)
+parseBuildFile fp exts =
     do t <- T.readFile fp
-       parseBuildFileText fp t
+       parseBuildFileText fp exts t
 
-parseBuildFileText :: FilePath -> T.Text -> IO (Either String BuildFile)
-parseBuildFileText fp t =
-    case parseOnly pBuildFile t of
+parseBuildFileText :: FilePath -> [Extension] -> T.Text -> IO (Either String BuildFile)
+parseBuildFileText fp exts t =
+    case parseOnlyBuildFile exts t of
       Left err ->
           return $ Left err
       Right theLines ->
-          constructBuildFile (takeDirectory fp) fp theLines
+          constructBuildFile (takeDirectory fp) fp exts theLines
+
+parseOnlyBuildFile :: [Extension] -> T.Text -> Either String [BuildFileLine]
+parseOnlyBuildFile exts t = parseOnly (pBuildFile exts) t
 
 parseFilePattern :: T.Text -> Either String FilePattern
 parseFilePattern pattern =
@@ -368,8 +397,8 @@ isValidFileNameChar :: Char -> Bool
 isValidFileNameChar c =
     c /= ' ' && c /= '\n' && c /= '\t'
 
-pBuildFile :: Parser [BuildFileLine]
-pBuildFile =
+pBuildFile :: [Extension] -> Parser [BuildFileLine]
+pBuildFile exts =
     many1 lineP <* endOfInput
     where
       finish =
@@ -388,11 +417,22 @@ pBuildFile =
           (pDownloadLine <* finish) <|>
           (pCookCopyLine <* finish) <|>
           RequireEnvVarLine <$> (pCookVar <* finish) <|>
+          (pExtensionLine exts <* finish) <|>
           DockerLine <$> (pDockerCommand <* finish)
+
+pExtensionLine :: [Extension] -> Parser BuildFileLine
+pExtensionLine exts = choice (map pExtension exts)
+
+pExtension :: Extension -> Parser BuildFileLine
+pExtension ext =
+    ExtensionLine ext <$> (asciiCI (e_command ext) *> skipSpaceNoEol *> argsP)
+    where
+      argsP =
+          takeWhile1 (not . eolOrCommentOrSpace) `sepBy'` (takeWhile1 isSpaceNotEol)
 
 pCookVar :: Parser (T.Text, Maybe T.Text)
 pCookVar =
-    asciiCI "COOKVAR" *> skipSpace *> valP <* skipSpace
+    asciiCI "COOKVAR" *> skipSpaceNoEol1 *> valP <* skipSpace
     where
       valP =
           (,)
@@ -400,27 +440,40 @@ pCookVar =
           <*> (optional $ T.strip <$> takeWhile1 (not . eolOrComment))
 
 pBeginTx :: Parser ()
-pBeginTx = asciiCI "BEGIN" *> skipSpace
+pBeginTx = asciiCI "BEGIN" *> skipSpaceNoEol
 
 pCommitTx :: Parser ()
-pCommitTx = asciiCI "COMMIT" *> skipSpace
+pCommitTx = asciiCI "COMMIT" *> skipSpaceNoEol
 
 pUnpackLine :: Parser FilePath
 pUnpackLine =
-    T.unpack <$> ((asciiCI "UNPACK" *> skipSpace) *> takeWhile1 isValidFileNameChar)
+    T.unpack <$> ((asciiCI "UNPACK" *> skipSpaceNoEol1) *> takeWhile1 isValidFileNameChar)
 
 pBuildBase :: Parser BuildBase
 pBuildBase =
-    (asciiCI "BASE" *> skipSpace) *> pBase
+    (asciiCI "BASE" *> skipSpaceNoEol1) *> pBase
     where
       pBase =
-          BuildBaseDocker <$> (asciiCI "DOCKER" *> skipSpace *> (DockerImage <$> takeWhile1 (not . eolOrComment))) <|>
-          BuildBaseCook <$> (asciiCI "COOK" *> skipSpace *> (BuildFileId <$> takeWhile1 isValidFileNameChar))
+          BuildBaseDocker <$> (asciiCI "DOCKER" *> skipSpaceNoEol1 *> (DockerImage <$> takeWhile1 (not . eolOrComment))) <|>
+          BuildBaseCook <$> (asciiCI "COOK" *> skipSpaceNoEol1 *> (BuildFileId <$> takeWhile1 isValidFileNameChar))
 
 pDockerCommand :: Parser DockerCommand
 pDockerCommand =
-    DockerCommand <$> (takeWhile1 isAlpha <* skipSpace)
+    DockerCommand <$> (takeWhile1 isAlpha <* skipSpaceNoEol)
                   <*> (T.stripEnd <$> takeWhile1 (not . eolOrComment))
+
+skipSpaceNoEol :: Parser ()
+skipSpaceNoEol =
+    skipWhile isSpaceNotEol
+
+skipWhile1 :: (Char -> Bool) -> Parser ()
+skipWhile1 pp =
+    do _ <- takeWhile1 pp
+       return ()
+
+skipSpaceNoEol1 :: Parser ()
+skipSpaceNoEol1 =
+    skipWhile1 isSpaceNotEol
 
 eolOrComment :: Char -> Bool
 eolOrComment x =
@@ -429,6 +482,10 @@ eolOrComment x =
 eolOrCommentOrSpace :: Char -> Bool
 eolOrCommentOrSpace x =
     isEndOfLine x || x == '#' || isSpace x
+
+isSpaceNotEol :: Char -> Bool
+isSpaceNotEol x =
+    (not $ isEndOfLine x) && isSpace x
 
 pComment :: Parser ()
 pComment =
@@ -440,27 +497,27 @@ pIncludeLine =
 
 pDownloadLine :: Parser BuildFileLine
 pDownloadLine =
-    DownloadLine <$> (DownloadUrl <$> ((asciiCI "DOWNLOAD" *> skipSpace) *> (takeWhile1 (not . isSpace))))
-                 <*> (T.unpack <$> (skipSpace *> takeWhile1 (not . eolOrCommentOrSpace)))
+    DownloadLine <$> (DownloadUrl <$> ((asciiCI "DOWNLOAD" *> skipSpaceNoEol1) *> (takeWhile1 (not . isSpaceNotEol))))
+                 <*> (T.unpack <$> (skipSpaceNoEol *> takeWhile1 (not . eolOrCommentOrSpace)))
 
 pCookCopyLine :: Parser BuildFileLine
 pCookCopyLine =
-    CookCopyLine <$> ((asciiCI "COOKCOPY" *> skipSpace) *> (T.unpack <$> takeWhile1 isValidFileNameChar))
+    CookCopyLine <$> ((asciiCI "COOKCOPY" *> skipSpaceNoEol1) *> (T.unpack <$> takeWhile1 isValidFileNameChar))
                  <*> (T.unpack <$> (skipSpace *> takeWhile1 isValidFileNameChar))
                  <*> (T.unpack <$> (skipSpace *> takeWhile1 isValidFileNameChar))
 
 pScriptLine :: Parser BuildFileLine
 pScriptLine =
-    ScriptLine <$> (T.unpack <$> ((asciiCI "SCRIPT" *> skipSpace) *> (takeWhile1 isValidFileNameChar)))
+    ScriptLine <$> (T.unpack <$> ((asciiCI "SCRIPT" *> skipSpaceNoEol1) *> (takeWhile1 isValidFileNameChar)))
                <*> (optional $ T.stripEnd <$> takeWhile1 (not . eolOrComment))
 
 pPrepareLine :: Parser T.Text
 pPrepareLine =
-    (asciiCI "PREPARE" *> skipSpace) *> takeWhile1 (not . eolOrComment)
+    (asciiCI "PREPARE" *> skipSpaceNoEol1) *> takeWhile1 (not . eolOrComment)
 
 pNopLine :: Parser T.Text
 pNopLine =
-    (asciiCI "NOP" *> skipSpace) *> takeWhile1 (not . eolOrComment)
+    (asciiCI "NOP" *> skipSpaceNoEol1) *> takeWhile1 (not . eolOrComment)
 
 pFilePattern :: Parser FilePattern
 pFilePattern =

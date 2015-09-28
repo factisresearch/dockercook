@@ -60,8 +60,8 @@ runProg' cmd =
       CookSync ->
           do stateDir <- findStateDirectory
              runSync stateDir
-      CookParse files ->
-          mapM_ cookParse files
+      CookParse files -> -- todo: support extensions
+          mapM_ (flip cookParse []) files
       CookVersion showNumeric ->
           if showNumeric
           then print (foldl' (\v (vers, pos) -> v + vers * (10 ^ (2*pos))) 0 $

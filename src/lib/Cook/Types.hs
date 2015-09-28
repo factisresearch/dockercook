@@ -21,6 +21,7 @@ data CookConfig
    , cc_autoPush :: Bool
    , cc_forceRebuild :: Bool
    , cc_compileVars :: HM.HashMap T.Text T.Text
+   , cc_extensionDirs :: [FilePath]
    , cc_buildEntryPoints :: [String]
    } deriving (Show, Eq)
 

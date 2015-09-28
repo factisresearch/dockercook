@@ -64,6 +64,9 @@ cookOptions =
                 <*> (packHM <$>
                      many (strOption $ long "set-var"
                            <> help "set a compile time environment variable. Format: NAME=value"))
+                <*> many (strOption $
+                          short 'x' <> long "extension-dir"
+                          <> help "Directory to look for extensions (multiple allowed)")
                 <*> cookFilesP
 
     )

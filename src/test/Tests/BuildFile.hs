@@ -1,10 +1,13 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Tests.BuildFile (htf_thisModulesTests) where
 
 import Cook.BuildFile
+import Cook.Extensions
 import Cook.Types
 
+import Path
 import Test.Framework
 import qualified Data.Vector as V
 import qualified Data.Text as T
@@ -26,11 +29,11 @@ test_matchFilePattern =
 
 test_parseBuildFile :: IO ()
 test_parseBuildFile =
-    do parsed1 <- parseBuildFileText "sample1" sampleFile1 >>= assertRight
-       parsed2 <- parseBuildFileText "sample1" sampleFile2 >>= assertRight
-       parsed3 <- parseBuildFileText "sample3" sampleFile3 >>= assertRight
-       parsed4 <- parseBuildFileText "sample3" sampleFile4 >>= assertRight
-       parsed5 <- parseBuildFile "test/parsefail02.cook" >>= assertRight
+    do parsed1 <- parseBuildFileText "sample1" [] sampleFile1 >>= assertRight
+       parsed2 <- parseBuildFileText "sample1" [] sampleFile2 >>= assertRight
+       parsed3 <- parseBuildFileText "sample3" [] sampleFile3 >>= assertRight
+       parsed4 <- parseBuildFileText "sample3" [] sampleFile4 >>= assertRight
+       parsed5 <- parseBuildFile "test/parsefail02.cook" [] >>= assertRight
        assertEqual (BuildBaseDocker $ DockerImage "ubuntu:14.04") (bf_base parsed1)
        assertEqual parsed1 parsed2
        assertEqual (BuildBaseCook $ BuildFileId "foo.build") (bf_base parsed3)
@@ -71,9 +74,9 @@ test_parseBuildFile =
 
 test_parseCookVar :: IO ()
 test_parseCookVar =
-    do parsed1 <- parseBuildFileText "sample1" sampleFile1 >>= assertRight
+    do parsed1 <- parseBuildFileText "sample1" [] sampleFile1 >>= assertRight
        assertEqual expected1 parsed1
-       parsed2 <- parseBuildFileText "sample2" sampleFile2 >>= assertRight
+       parsed2 <- parseBuildFileText "sample2" [] sampleFile2 >>= assertRight
        assertEqual expected2 parsed2
     where
       expected2 =
@@ -101,8 +104,46 @@ test_parseCookVar =
           , "RUN echo $BUILD_MODE"
           ]
 
+test_parseExtensions :: IO ()
+test_parseExtensions =
+    do parsed1 <- assertRight $ parseOnlyBuildFile exts1 sampleFile1
+       assertEqual expected1 parsed1
+       parsed2 <- assertRight $ parseOnlyBuildFile exts2 sampleFile2
+       assertEqual expected2 parsed2
+    where
+      expected2 =
+          [ BaseLine (BuildBaseCook (BuildFileId "foo.bar"))
+          , ExtensionLine ext1 ["a", "b", "c"]
+          , ExtensionLine ext2 []
+          , DockerLine (DockerCommand "RUN" "echo 'bazinga'")
+          ]
+      expected1 =
+          [ BaseLine (BuildBaseCook (BuildFileId "foo.bar"))
+          , ExtensionLine ext1 ["a", "b", "c"]
+          , DockerLine (DockerCommand "RUN" "echo foo")
+          ]
+      ext1 = Extension "SOME/EXT" $(mkAbsFile "/home/fooo")
+      ext2 = Extension "OTHER/EXT" $(mkAbsFile "/home/bar")
+      exts1 =
+          [ ext1 ]
+      exts2 =
+          [ ext1, ext2 ]
+      sampleFile1 =
+          T.unlines
+          [ "BASE COOK foo.bar"
+          , "SOME/EXT a b c"
+          , "RUN echo foo"
+          ]
+      sampleFile2 =
+          T.unlines
+          [ "BASE COOK foo.bar"
+          , "SOME/EXT a b c"
+          , "OTHER/EXT"
+          , "RUN echo 'bazinga'"
+          ]
+
 test_parseBuildAdvanced :: IO ()
 test_parseBuildAdvanced =
-    do t1 <- parseBuildFile "test/parsefail01.cook"
+    do t1 <- parseBuildFile "test/parsefail01.cook" []
        _ <- assertRight t1
        return ()
