@@ -2,7 +2,6 @@ module Cook.Extensions
     ( findExtensions, Extension(..) )
 where
 
-import Control.Applicative
 import Control.Monad.Trans.Resource
 import Data.Conduit
 import Data.Conduit.Filesystem

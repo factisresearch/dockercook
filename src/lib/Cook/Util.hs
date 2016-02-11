@@ -5,7 +5,7 @@ import Cook.Types
 import Control.Monad
 import Control.Monad.Trans
 import Control.Retry
-import Data.List (intercalate)
+import Data.Monoid
 import System.Exit
 import System.IO
 import System.Log.Formatter
@@ -27,7 +27,8 @@ concatHash sha1List = quickHash $ map unSha1 sha1List
 initLoggingFramework :: Priority -> IO ()
 initLoggingFramework prio =
     do myStreamHandler <- streamHandler stdout prio
-       let myStreamHandler' = setFormatter myStreamHandler (simpleLogFormatter "[$prio $time $loggername] $msg")
+       let myStreamHandler' =
+             setFormatter myStreamHandler (simpleLogFormatter "[$prio $time $loggername] $msg")
        root <- getRootLogger
        saveGlobalLogger (setLevel DEBUG $ setHandlers [myStreamHandler'] root)
 
@@ -45,7 +46,7 @@ logError = liftIO . errorM "cook"
 
 readProcessWithExitCode' :: String -> [String] -> String -> IO (ExitCode, String, String)
 readProcessWithExitCode' cmd args procIn =
-    do logDebug ("$ " ++ cmd ++ " " ++ intercalate " " args)
+    do logDebug ("$ " ++ cmd ++ " " ++ unwords args)
        readProcessWithExitCode cmd args procIn
 
 systemStream :: Maybe FilePath -> String -> (BS.ByteString -> IO ()) -> IO ExitCode
@@ -60,7 +61,7 @@ systemStream mDir cmd _onOutput =
 compressFilesInDir :: Bool -> FilePath -> FilePath -> [FilePath] -> IO ()
 compressFilesInDir shouldRetry tarName dirFp files =
     do ecTar <-
-           retrying (constantDelay microsec <> limitRetries 5) checkRetry sysAction
+           retrying (constantDelay microsec <> limitRetries 5) checkRetry (const sysAction)
        unless (ecTar == ExitSuccess) $
           fail ("Error creating tar:\n" ++ tarCmd ++ " " ++ unwords tarArgs)
     where

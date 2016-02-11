@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Cook.BuildFile
     ( BuildFileId(..), BuildFile(..), BuildBase(..), DockerCommand(..), TxRef
     , buildFileIdAddParent

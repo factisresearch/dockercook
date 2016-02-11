@@ -20,7 +20,6 @@ import Cook.State.Model
 import Cook.Types
 import qualified Cook.DirectDocker as Docker
 
-import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception
@@ -31,6 +30,7 @@ import Control.Monad.Trans.Resource
 import Control.Retry
 import Data.Aeson
 import Data.Maybe
+import Data.Monoid
 import Data.Time
 import Data.Time.Clock.POSIX
 import Database.Persist.Sqlite
@@ -56,7 +56,7 @@ data HashManager
    }
 
 fastFileHash :: forall m. MonadIO m => HashManager -> FilePath -> m SHA1 -> m SHA1
-fastFileHash hm = hm_lookup hm
+fastFileHash = hm_lookup
 
 _STATE_DIR_NAME_ :: FilePath
 _STATE_DIR_NAME_ = ".kitchen2"
@@ -76,16 +76,16 @@ findStateDirectory =
                      checkLoop (normalise $ takeDirectory parentDir)
 
 waitForWrites :: StateManager -> IO ()
-waitForWrites st =
-    sm_waitForWrites st
+waitForWrites = sm_waitForWrites
 
 createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
     do logDebug $ "Creating state manager with directory " ++ stateDirectory
        pool <- runNoLoggingT $ createSqlitePool (T.pack sqlLoc) 5
        let runSql action =
-               let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
-               in (recoverAll (constantDelay microsec <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
+               let tryTx _ = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
+               in (recoverAll (constantDelay microsec <> limitRetries 5) tryTx) `catch`
+                    \(e :: SomeException) ->
                     fail $ "Sqlite-Transaction finally failed: " ++ show e
        runSql (runMigration migrateState)
        sqlQueue <- newTBQueueIO 100
@@ -94,7 +94,8 @@ createStateManager stateDirectory =
        let hashMap =
                foldl (\hm entity ->
                           let v = entityVal entity
-                          in HM.insert (dbHashCacheFullPath v) (dbHashCacheMtime v, SHA1 $ dbHashCacheHash v) hm
+                          in HM.insert (dbHashCacheFullPath v)
+                               (dbHashCacheMtime v, SHA1 $ dbHashCacheHash v) hm
                      ) HM.empty allHashes
        hashMapV <- newTVarIO hashMap
        hashWriteChan <- newTBQueueIO 1000
@@ -167,7 +168,7 @@ hashManagerPersistWorker (StateManager{..}) workEnqueuedVar hashWriteChan =
              let sqlAction =
                      sm_runSqlWrite $
                      do let xs = V.toList writeBatch
-                        mapM_ (\oldHash -> deleteWhere [DbHashCacheFullPath ==. oldHash]) (map dbHashCacheFullPath xs)
+                        mapM_ (\wb -> deleteWhere [DbHashCacheFullPath ==. dbHashCacheFullPath wb]) xs
                         _ <- insertMany xs
                         logDebug $ "Stored " ++ (show $ V.length writeBatch) ++ " hashes"
                         return ()

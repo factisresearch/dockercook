@@ -42,7 +42,7 @@ library
                        bytestring >=0.10,
                        containers >=0.5,
                        conduit >=1.1,
-                       conduit-combinators >=0.2 && <1.0,
+                       conduit-combinators >=0.2 && <2.0,
                        conduit-extra >=1.1,
                        cryptohash >=0.11,
                        directory >=1.2,

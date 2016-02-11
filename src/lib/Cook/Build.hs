@@ -16,7 +16,6 @@ import Cook.Downloads
 import qualified Cook.Docker as D
 import qualified Cook.DirectDocker as Docker
 
-import Control.Applicative
 import Control.Monad
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
@@ -61,20 +60,21 @@ sourceDirectoryDeep' followSymlinks shouldFollow =
   start
   where
     start :: MonadResource m => FP.FilePath -> Producer m FP.FilePath
-    start dir = C.sourceDirectory dir =$= awaitForever go
-    go :: MonadResource m => FP.FilePath -> Producer m FP.FilePath
-    go fp =
-        do ft <- liftIO $ F.getFileType (FP.encodeString fp)
+    start dir = C.sourceDirectory (FP.encodeString dir) =$= awaitForever go
+    go :: MonadResource m => FilePath -> Producer m FP.FilePath
+    go fpStr =
+        do let fp = FP.decodeString fpStr
+           ft <- liftIO $ F.getFileType fpStr
            case ft of
              F.FTFile -> yield fp
              F.FTFileSym -> yield fp
              F.FTDirectory ->
                  do followOk <- liftIO $ shouldFollow fp
-                    if followOk then start fp else return ()
+                    when followOk $ start fp
              F.FTDirectorySym
                  | followSymlinks ->
                      do followOk <- liftIO $ shouldFollow fp
-                        if followOk then start fp else return ()
+                        when followOk $ start fp
                  | otherwise -> return ()
              F.FTOther -> return ()
 
@@ -115,7 +115,7 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
               do logDebug ("Hashed " ++ show relToRootF)
                  let fullFilePath = fullRoot </> FP.encodeString relToRootF
                      hashComp =
-                         do bs <- C.sourceFile relToCurrentF $$ C.sinkList
+                         do bs <- C.sourceFile (FP.encodeString relToCurrentF) $$ C.sinkList
                             liftIO $ hPutStr stderr "#"
                             return $! quickHash bs
                  hash <- fastFileHash hMgr fullFilePath hashComp
@@ -152,7 +152,7 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
                return $ (Just outTar, buildPrepareTar, concatHash hashes)
     where
       computeHash fp =
-          do bs <- C.sourceFile fp $$ C.sinkList
+          do bs <- C.sourceFile (FP.encodeString fp) $$ C.sinkList
              logDebug ("PREPARE: Hashing " ++ show fp)
              return $ [quickHash bs]
 

@@ -11,7 +11,6 @@ where
 import Cook.Types
 import Cook.Util
 
-import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad

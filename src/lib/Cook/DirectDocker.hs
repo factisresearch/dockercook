@@ -14,7 +14,6 @@ where
 import Cook.Types
 import Cook.Util
 
-import Control.Applicative
 import Control.Concurrent.STM
 import Control.Exception
 import Control.Lens ((^?))
