@@ -1,3 +1,4 @@
+
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
@@ -134,6 +135,9 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
        forM_ cookCopyHm $ \(dockerImage, filesToCopy) ->
            bracket (D.dockerRunForCopy dockerImage) (D.dockerRm True) $ \ct ->
            forM_ filesToCopy $ \(src, dst) ->
+               do logInfo ("Copying files from "
+                           ++ T.unpack (unDockerImage dockerImage) ++ ":" ++ src
+                           ++ " to prepare dir")
                   D.dockerCp ct src (prepareDir </> dst)
        generated <- getDirectoryContents prepareDir
        let fileCount = (length generated) - (length initDirSt)
@@ -202,8 +206,11 @@ buildImage env (bf, bfRootDir) =
        (dockerCommandsBase, txHashes) <- buildTxScripts buildTempDir bf
        cookCopyHm <-
            forM (HM.toList $ bf_cookCopy bf) $ \(cookFile, files) ->
-               do cookPrep <- prepareEntryPoint (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cookFile)
-                  image <- buildImage env (cookPrep, bfRootDir)
+               do let cf = normalise cookFile
+                      fileDir = takeDirectory cf
+                  cookPrep <-
+                      prepareEntryPoint (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cf)
+                  image <- buildImage env (cookPrep, normalise $ bfRootDir </> fileDir)
                   return (image, files)
        (mTar, mkPrepareTar, prepareHash) <-
            runPrepareCommands buildTempDir prepareDir bf streamHook cookCopyHm
