@@ -281,7 +281,7 @@ buildImage env (bf, bfRootDir) =
            markImage =
                do markUsingImage (be_stateManager env) imageName (Docker.di_id hostInfo)
                   T.forM mUserTagName $ \userTag ->
-                      do _ <- systemStream Nothing ("docker tag -f " ++ imageTag ++ " " ++ userTag) streamHook
+                      do _ <- systemStream Nothing ("docker tag " ++ imageTag ++ " " ++ userTag) streamHook
                          return (DockerImage $ T.pack userTag)
            announceBegin =
                do let move = 30 - length name
