@@ -195,7 +195,7 @@ copyTarAndUnpack um tarName imageDest =
             SkipExisting -> "--skip-old-files"
             OverwriteExisting -> "--overwrite"
          )
-      ++ " /" ++ tarName ++ " -C " ++ imageDest
+      ++ " -f /" ++ tarName ++ " -C " ++ imageDest
       ++ " && rm -rf /" ++ tarName
     ]
 
