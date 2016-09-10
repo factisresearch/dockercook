@@ -1,9 +1,7 @@
-
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE RankNTypes #-}
 module Cook.Build (cookBuild, cookParse) where
 
@@ -16,7 +14,7 @@ import Cook.Downloads
 import qualified Cook.Docker as D
 import qualified Cook.DirectDocker as Docker
 
-import Control.Applicative
+import Control.Arrow (first)
 import Control.Monad
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
@@ -53,27 +51,27 @@ fixTailingSlash s =
 
 sourceDirectoryDeep' :: MonadResource m
                     => Bool -- ^ Follow directory symlinks
-                    -> (FP.FilePath -> IO Bool) -- ^ Should a directory be expanded
-                    -> FP.FilePath -- ^ Root directory
-                    -> Producer m FP.FilePath
+                    -> (FilePath -> IO Bool) -- ^ Should a directory be expanded
+                    -> FilePath -- ^ Root directory
+                    -> Producer m FilePath
 sourceDirectoryDeep' followSymlinks shouldFollow =
   start
   where
-    start :: MonadResource m => FP.FilePath -> Producer m FP.FilePath
+    start :: MonadResource m => FilePath -> Producer m FilePath
     start dir = C.sourceDirectory dir =$= awaitForever go
-    go :: MonadResource m => FP.FilePath -> Producer m FP.FilePath
+    go :: MonadResource m => FilePath -> Producer m FilePath
     go fp =
-        do ft <- liftIO $ F.getFileType (FP.encodeString fp)
+        do ft <- liftIO $ F.getFileType fp
            case ft of
              F.FTFile -> yield fp
              F.FTFileSym -> yield fp
              F.FTDirectory ->
                  do followOk <- liftIO $ shouldFollow fp
-                    if followOk then start fp else return ()
+                    when followOk $ start fp
              F.FTDirectorySym
                  | followSymlinks ->
                      do followOk <- liftIO $ shouldFollow fp
-                        if followOk then start fp else return ()
+                        when followOk $ start fp
                  | otherwise -> return ()
              F.FTOther -> return ()
 
@@ -82,12 +80,16 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
     do currentDir <- getCurrentDirectory
        let fullRoot = currentDir </> FP.encodeString root
        logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This could take some time..."
-       x <- runResourceT $! sourceDirectoryDeep' False dirCheck root =$= C.concatMapM (hashFile fullRoot) $$ C.sinkList
+       x <-
+           runResourceT $!
+           sourceDirectoryDeep' False dirCheck (FP.encodeString root)
+           =$= C.concatMapM (hashFile fullRoot . FP.decodeString)
+           $$ C.sinkList
        hPutStr stderr "\n"
        logDebug "Done hashing your repo!"
-       return x
+       return $ map (first FP.decodeString) x
     where
-      dirCheck rf =
+      dirCheck (FP.decodeString -> rf) =
           case FP.stripPrefix root rf of
             Nothing ->
                 let cd = show $ FP.commonPrefix [root, rf]
@@ -105,7 +107,7 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                 let cd = show $ FP.commonPrefix [root, relToCurrentF]
                 in fail ("Expected " ++ show relToCurrentF ++ " to start with " ++ show root ++ ". Common dirs:" ++ cd)
             Just relToRootF ->
-                hashFile' fullRoot relToRootF relToCurrentF
+                hashFile' fullRoot relToRootF (FP.encodeString relToCurrentF)
       hashFile' fullRoot relToRootF relToCurrentF
           | ignore relToRootF =
               do logDebug ("Ignored " ++ show relToRootF)
@@ -141,12 +143,12 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
                   D.dockerCp ct src (prepareDir </> dst)
        generated <- getDirectoryContents prepareDir
        let fileCount = (length generated) - (length initDirSt)
-       when (not $ V.null $ bf_prepare bf) $
+       unless (V.null $ bf_prepare bf) $
             logInfo ("Prepare generated " ++ (show fileCount) ++ " files")
        if fileCount <= 0
        then return (Nothing, return (), quickHash ["no-prepare"])
        else do hashes <-
-                   runResourceT $! sourceDirectoryDeep' False (const $ return True) (FP.decodeString prepareDir)
+                   runResourceT $! sourceDirectoryDeep' False (const $ return True) prepareDir
                        =$= C.concatMapM computeHash $$ C.sinkList
                let buildPrepareTar =
                        do logDebug "Actually compressing the tar dir"
@@ -289,7 +291,7 @@ buildImage env (bf, bfRootDir) =
                   then hPutStr stderr (name ++ "... \n" ++ replicate 30 ' ')
                   else hPutStr stderr (name ++ "... " ++ replicate move ' ')
            tagInfo =
-               fromMaybe "" $ fmap (\userTag -> " --> " ++ userTag) mUserTagName
+               maybe "" (\userTag -> " --> " ++ userTag) mUserTagName
            nameTagArrow =
                imageTag ++ tagInfo
 
@@ -305,7 +307,7 @@ buildImage env (bf, bfRootDir) =
                                      ++ if cc_forceRebuild then "forced" else "hash changed"
                                      ++ ")"
                                     )
-                   unless (cc_forceRebuild) $ logDebug' "Image not found!"
+                   unless cc_forceRebuild $ logDebug' "Image not found!"
                    mkPrepareTar
                    (x, buildTime) <- launchImageBuilder dockerBS imageName buildTempDir
                    mTag <- markImage
@@ -316,10 +318,10 @@ buildImage env (bf, bfRootDir) =
                      do logDebug' $ "The raw id of " ++ imageTag ++ " is " ++ show imageId
                         setImageId (be_stateManager env) imageName imageId
                    return (mTag, x)
-       when (cc_autoPush) $
+       when cc_autoPush $
             case mNewTag of
               Nothing ->
-                  logError ("Autopush is enabled, but no tag provided!")
+                  logError "Autopush is enabled, but no tag provided!"
               Just newTag ->
                   do logInfo ("enqueuing " ++ (T.unpack $ unDockerImage newTag)
                                            ++ " for upload to registry")
@@ -426,7 +428,7 @@ buildImage env (bf, bfRootDir) =
                else do hPutStrLn stderr ("Failed to build " ++ tag ++ "!")
                        hPutStrLn stderr ("Failing Cookfile: "
                                          ++ T.unpack (unBuildFileId (bf_name bf)))
-                       hPutStrLn stderr ("Saving temp directory to COOKFAILED.")
+                       hPutStrLn stderr "Saving temp directory to COOKFAILED."
                        _ <- systemStream Nothing ("rm -rf COOKFAILED; cp -r " ++ tempDir ++ " COOKFAILED") streamHook
                        exitWith ecDocker
       localName fp =
@@ -434,7 +436,7 @@ buildImage env (bf, bfRootDir) =
             Nothing -> error ("Expected " ++ show fp ++ " to start with " ++ rootDir)
             Just x -> x
       matchesFile fp pattern = matchesFilePattern pattern (FP.encodeString (localName fp))
-      isNeededHash fp = or (map (matchesFile fp) (V.toList (bf_include bf)))
+      isNeededHash fp = any (matchesFile fp) (V.toList (bf_include bf))
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) (be_fileHashes env)
 
 

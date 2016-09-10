@@ -5,7 +5,7 @@ import Cook.Types
 import Control.Monad
 import Control.Monad.Trans
 import Control.Retry
-import Data.List (intercalate)
+import Data.Monoid
 import System.Exit
 import System.IO
 import System.Log.Formatter
@@ -45,7 +45,7 @@ logError = liftIO . errorM "cook"
 
 readProcessWithExitCode' :: String -> [String] -> String -> IO (ExitCode, String, String)
 readProcessWithExitCode' cmd args procIn =
-    do logDebug ("$ " ++ cmd ++ " " ++ intercalate " " args)
+    do logDebug ("$ " ++ cmd ++ " " ++ unwords args)
        readProcessWithExitCode cmd args procIn
 
 systemStream :: Maybe FilePath -> String -> (BS.ByteString -> IO ()) -> IO ExitCode
@@ -68,7 +68,7 @@ compressFilesInDir shouldRetry tarName dirFp files =
           12 * 1000 * 1000
       checkRetry _ ec =
           return (shouldRetry && ec /= ExitSuccess)
-      sysAction =
+      sysAction _ =
           rawSystem tarCmd tarArgs
       tarCmd =
           "/usr/bin/env"

@@ -20,7 +20,6 @@ import Cook.State.Model
 import Cook.Types
 import qualified Cook.DirectDocker as Docker
 
-import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Exception
@@ -31,6 +30,7 @@ import Control.Monad.Trans.Resource
 import Control.Retry
 import Data.Aeson
 import Data.Maybe
+import Data.Monoid
 import Data.Time
 import Data.Time.Clock.POSIX
 import Database.Persist.Sqlite
@@ -76,21 +76,20 @@ findStateDirectory =
                      checkLoop (normalise $ takeDirectory parentDir)
 
 waitForWrites :: StateManager -> IO ()
-waitForWrites st =
-    sm_waitForWrites st
+waitForWrites = sm_waitForWrites
 
 createStateManager :: FilePath -> IO (StateManager, HashManager)
 createStateManager stateDirectory =
     do logDebug $ "Creating state manager with directory " ++ stateDirectory
        pool <- runNoLoggingT $ createSqlitePool (T.pack sqlLoc) 5
        let runSql action =
-               let tryTx = (runResourceT . runNoLoggingT . ((flip runSqlPool) pool)) action
+               let tryTx _ = (runResourceT . runNoLoggingT . (flip runSqlPool) pool) action
                in (recoverAll (constantDelay microsec <> limitRetries 5) tryTx) `catch` \(e :: SomeException) ->
                     fail $ "Sqlite-Transaction finally failed: " ++ show e
        runSql (runMigration migrateState)
        sqlQueue <- newTBQueueIO 100
        allHashes <- runSql $ selectList [] []
-       logDebug $ "Initializing hash manager"
+       logDebug "Initializing hash manager"
        let hashMap =
                foldl (\hm entity ->
                           let v = entityVal entity
@@ -102,7 +101,7 @@ createStateManager stateDirectory =
        let waitWrites =
                atomically $
                do emptyQ <- isEmptyTBQueue sqlQueue
-                  unless emptyQ $ retry
+                  unless emptyQ retry
            stateMgr =
                StateManager
                { sm_runSqlGet =
