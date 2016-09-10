@@ -1,18 +1,18 @@
 name:                dockercook
-version:             0.5.0.1
+version:             0.5.0.3
 synopsis:            A build tool for multiple docker image layers
 description:         Build and manage multiple docker image layers to speed up deployment
 license:             MIT
 license-file:        LICENSE
 author:              Alexander Thiemann <thiemann@cp-med.com>
 maintainer:          Alexander Thiemann <thiemann@cp-med.com>
-copyright:           (c) 2014-2015 factis research GmbH
+copyright:           (c) 2014-2016 factis research GmbH
 category:            Development
 build-type:          Simple
 homepage:            https://github.com/factisresearch/dockercook
 bug-reports:         https://github.com/factisresearch/dockercook/issues
 cabal-version:       >=1.8
-tested-with:         GHC==7.8.4
+tested-with:         GHC==7.10.3
 
 extra-source-files:
     test/*.cook
