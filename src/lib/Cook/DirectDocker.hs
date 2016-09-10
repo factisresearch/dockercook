@@ -112,7 +112,7 @@ data DockerImageListInfo
    , dili_parentId :: !DockerImageId
    , dili_size :: !Int
    , dili_virtualSize :: !Int
-   , dili_repoTags :: [DockerTag]
+   , dili_repoTags :: ![DockerTag]
    } deriving (Show, Eq)
 
 instance FromJSON DockerImageListInfo where
@@ -123,7 +123,7 @@ instance FromJSON DockerImageListInfo where
             <*> obj .: "ParentId"
             <*> obj .: "Size"
             <*> obj .: "VirtualSize"
-            <*> obj .: "RepoTags"
+            <*> obj .:? "RepoTags" .!= []
 
 withDockerBaseUrl :: (DockerBaseUrl -> IO a) -> IO a
 withDockerBaseUrl action =
