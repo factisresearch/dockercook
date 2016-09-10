@@ -1,17 +1,10 @@
 BASE COOK ubuntu.cook
 
-# Install ghc7.8.3
-BEGIN
-RUN wget -O ghc.tar.bz2 http://www.haskell.org/ghc/dist/7.8.3/ghc-7.8.3-x86_64-unknown-linux-deb7.tar.bz2
-RUN tar xvfj ghc.tar.bz2
-RUN cd ghc-7.8.3 && ./configure
-RUN cd ghc-7.8.3 && make install
-RUN rm -rf ghc.tar.bz2 ghc-7.8.3
-COMMIT
-
 # Install stack
 RUN wget -q -O- https://s3.amazonaws.com/download.fpcomplete.com/ubuntu/fpco.key | sudo apt-key add -
 RUN echo 'deb http://download.fpcomplete.com/ubuntu/utopic stable main'|sudo tee /etc/apt/sources.list.d/fpco.list
 RUN sudo apt-get update && sudo apt-get install stack -y
 
 ENV PATH $HOME/.local/bin:$PATH
+
+RUN stack setup 7.10.2
