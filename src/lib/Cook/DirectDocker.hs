@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections #-}
 module Cook.DirectDocker
     ( DockerHostId(..), dockerHostIdAsText
     , dockerInfo, DockerInfo(..)
@@ -11,6 +12,7 @@ module Cook.DirectDocker
     )
 where
 
+import Cook.Docker.Tls
 import Cook.Types
 import Cook.Util
 
@@ -21,10 +23,13 @@ import Control.Monad
 import Data.Aeson
 import Data.Char (isDigit)
 import Data.List (foldl')
+import Data.Maybe
 import Data.Monoid
 import Network.HTTP.Client (HttpException(..))
+import Network.URI
 import Network.Wreq
 import System.Environment
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Set as S
 import qualified Data.Text as T
 
@@ -125,16 +130,30 @@ instance FromJSON DockerImageListInfo where
             <*> obj .: "VirtualSize"
             <*> obj .:? "RepoTags" .!= []
 
-withDockerBaseUrl :: (DockerBaseUrl -> IO a) -> IO a
-withDockerBaseUrl action =
-    do host <- getEnv "DOCKER_HOST"
-       action $ DockerBaseUrl $ T.replace "tcp://" "http://" (T.pack host) <> "/v1.19/"
+withDocker ::
+    (Options -> String -> IO (Response BSL.ByteString))
+    -> T.Text
+    -> IO (Response BSL.ByteString)
+withDocker sendReq url =
+    do (urlScheme, host, opts) <-
+           do host <- getEnv "DOCKER_HOST"
+              tls <- fromMaybe "0" <$> lookupEnv "DOCKER_TLS_VERIFY"
+              (urlScheme, opts) <-
+                  case tls of
+                    "1" ->
+                        let hostname =
+                                maybe "localhost" uriRegName $ uriAuthority =<< parseURI host
+                        in ("https", ) <$> tlsDockerOpts hostname
+                    _ -> return ("http", defaults)
+              return (urlScheme, host, opts)
+       let urlPrefix =
+               T.replace "tcp://" (urlScheme <> "://" ) (T.pack host) <> "/v1.19/"
+       sendReq opts $ T.unpack $ urlPrefix <> url
 
 -- | Retrieve information about the remote docker host
 dockerInfo :: IO (Maybe DockerInfo)
 dockerInfo =
-    withDockerBaseUrl $ \(DockerBaseUrl url) ->
-    do r <- asJSON =<< get (T.unpack url <> "info")
+    do r <- asJSON =<< withDocker getWith "info"
        return (r ^? responseBody)
 
 -- | Get the image id providing an image tag
@@ -147,15 +166,13 @@ dockerInspectImage (DockerImage name) =
     action `catch` \(_ :: HttpException) -> return Nothing
     where
       action =
-          withDockerBaseUrl $ \(DockerBaseUrl url) ->
-          do r <- asJSON =<< get (T.unpack url <> "images/" <> T.unpack name <> "/json")
+          do r <- asJSON =<< withDocker getWith ("images/" <> name <> "/json")
              return (r ^? responseBody)
 
 -- | List docker images on remote docker host
 dockerImages :: IO (Maybe [DockerImageListInfo])
 dockerImages =
-    withDockerBaseUrl $ \(DockerBaseUrl url) ->
-    do r <- asJSON =<< get (T.unpack url <> "images/json?all=0")
+    do r <- asJSON =<< withDocker getWith ("images/json?all=0")
        return (r ^? responseBody)
 
 newtype DockerImagesCache
