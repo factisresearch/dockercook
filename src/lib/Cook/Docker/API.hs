@@ -2,17 +2,18 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections #-}
-module Cook.DirectDocker
+module Cook.Docker.API
     ( DockerHostId(..), dockerHostIdAsText
-    , dockerInfo, DockerInfo(..)
-    , dockerImageId, dockerInspectImage, DockerImageInfo(..)
-    , dockerImages, DockerImageListInfo(..)
+    , DockerInfo(..)
+    , dockerImageId, DockerImageInfo(..)
+    , DockerImageListInfo(..)
     , newDockerImagesCache, doesImageExist, DockerImagesCache(..)
     , DockerTag(..), DockerTagVersion(..), parseDockerTag
+    , DockerClient(..), mkCli, optionsFromEnv
     )
 where
 
-import Cook.Docker.Tls
+import Cook.Docker.TLS
 import Cook.Types
 import Cook.Util
 
@@ -28,8 +29,8 @@ import Data.Monoid
 import Network.HTTP.Client (HttpException(..))
 import Network.URI
 import Network.Wreq
+import System.FilePath
 import System.Environment
-import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Set as S
 import qualified Data.Text as T
 
@@ -130,11 +131,8 @@ instance FromJSON DockerImageListInfo where
             <*> obj .: "VirtualSize"
             <*> obj .:? "RepoTags" .!= []
 
-withDocker ::
-    (Options -> String -> IO (Response BSL.ByteString))
-    -> T.Text
-    -> IO (Response BSL.ByteString)
-withDocker sendReq url =
+optionsFromEnv :: IO (Options, String)
+optionsFromEnv =
     do (urlScheme, host, opts) <-
            do host <- getEnv "DOCKER_HOST"
               tls <- fromMaybe "0" <$> lookupEnv "DOCKER_TLS_VERIFY"
@@ -148,31 +146,47 @@ withDocker sendReq url =
               return (urlScheme, host, opts)
        let urlPrefix =
                T.replace "tcp://" (urlScheme <> "://" ) (T.pack host) <> "/v1.19/"
-       sendReq opts $ T.unpack $ urlPrefix <> url
+       return (opts, T.unpack urlPrefix)
+
+data DockerClient =
+    DockerClient
+    { dockerInfo :: IO (Maybe DockerInfo)
+    , dockerInspectImage :: DockerImage -> IO (Maybe DockerImageInfo)
+    , dockerImages :: IO (Maybe [DockerImageListInfo])
+    }
+
+mkCli (opts, apiPath) =
+    DockerClient
+    { dockerInfo = dockerInfoImpl opts apiPath
+    , dockerInspectImage = dockerInspectImageImpl opts apiPath
+    , dockerImages = dockerImagesImpl opts apiPath
+    }
 
 -- | Retrieve information about the remote docker host
-dockerInfo :: IO (Maybe DockerInfo)
-dockerInfo =
-    do r <- asJSON =<< withDocker getWith "info"
+dockerInfoImpl :: Options -> String -> IO (Maybe DockerInfo)
+dockerInfoImpl opts apiPath =
+    do r <- asJSON =<< getWith opts (apiPath </> "info")
        return (r ^? responseBody)
 
 -- | Get the image id providing an image tag
-dockerImageId :: DockerImage -> IO (Maybe DockerImageId)
-dockerImageId di = liftM (fmap dii_id) $ dockerInspectImage di
+dockerImageId :: DockerClient -> DockerImage -> IO (Maybe DockerImageId)
+dockerImageId cli di = liftM (fmap dii_id) $ dockerInspectImage cli di
 
 -- | Looking information about an image provided an image tag
-dockerInspectImage :: DockerImage -> IO (Maybe DockerImageInfo)
-dockerInspectImage (DockerImage name) =
+dockerInspectImageImpl :: Options -> String -> DockerImage -> IO (Maybe DockerImageInfo)
+dockerInspectImageImpl opts apiPath (DockerImage name) =
     action `catch` \(_ :: HttpException) -> return Nothing
     where
       action =
-          do r <- asJSON =<< withDocker getWith ("images/" <> name <> "/json")
+          do r <-
+                 asJSON
+                 =<< getWith opts (apiPath </> "images" </> (T.unpack name) </> "json")
              return (r ^? responseBody)
 
 -- | List docker images on remote docker host
-dockerImages :: IO (Maybe [DockerImageListInfo])
-dockerImages =
-    do r <- asJSON =<< withDocker getWith ("images/json?all=0")
+dockerImagesImpl :: Options -> String -> IO (Maybe [DockerImageListInfo])
+dockerImagesImpl opts apiPath =
+    do r <- asJSON =<< getWith opts (apiPath </> "images/json?all=0")
        return (r ^? responseBody)
 
 newtype DockerImagesCache
@@ -184,14 +198,14 @@ newDockerImagesCache =
     DockerImagesCache <$> newTVarIO Nothing
 
 -- | Check if an image exists on remote docker host
-doesImageExist :: DockerImagesCache -> Either DockerImage DockerImageId -> IO Bool
-doesImageExist (DockerImagesCache cacheVar) eImage =
+doesImageExist :: DockerClient -> DockerImagesCache -> Either DockerImage DockerImageId -> IO Bool
+doesImageExist cli (DockerImagesCache cacheVar) eImage =
     do cacheData <-
            do cd <- atomically $ readTVar cacheVar
               case cd of
                 Nothing ->
                     do logDebug "No image cache available, hitting server to get a list"
-                       res <- dockerImages
+                       res <- dockerImages cli
                        case res of
                          Nothing ->
                              error "Docker images failed!"

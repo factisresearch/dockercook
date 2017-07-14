@@ -23,7 +23,7 @@ library
   exposed-modules:
                        Cook.Build,
                        Cook.BuildFile,
-                       Cook.DirectDocker,
+                       Cook.Docker.API,
                        Cook.Downloads,
                        Cook.State.Manager,
                        Cook.Sync,
@@ -31,8 +31,8 @@ library
                        Cook.Uploader,
                        Cook.Util
   other-modules:
-                       Cook.Docker.Tls,
-                       Cook.Docker,
+                       Cook.Docker.TLS,
+                       Cook.Docker.CLI,
                        Cook.State.Model
   build-depends:
                        attoparsec >=0.11,
@@ -104,7 +104,7 @@ test-suite dockercook-test
   hs-source-dirs:      src/test
   main-is:             Tests.hs
   other-modules:       Tests.BuildFile,
-                       Tests.DirectDocker
+                       Tests.Docker.API
   build-depends:
                        HTF >=0.12.2.3,
                        base >=4.6 && <5,

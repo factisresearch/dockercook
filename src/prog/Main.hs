@@ -10,6 +10,7 @@ import Cook.Types
 import Cook.Uploader
 import Cook.Util
 import Cook.State.Manager
+import qualified Cook.Docker.API as Docker
 
 import Data.List (foldl')
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -48,8 +49,9 @@ runProg' cmd =
       CookBuild buildCfg ->
           do uploader <- mkUploader 100
              stateDir <- findStateDirectory
+             cli <- Docker.mkCli <$> Docker.optionsFromEnv
              let rootDir = takeDirectory stateDir
-             _ <- cookBuild rootDir stateDir buildCfg uploader Nothing
+             _ <- cookBuild rootDir stateDir buildCfg cli uploader Nothing
              when (cc_autoPush buildCfg) $
                do logInfo $ "Waiting for all images to finish beeing pushed"
                   waitForCompletion uploader
@@ -59,7 +61,8 @@ runProg' cmd =
              return ()
       CookSync ->
           do stateDir <- findStateDirectory
-             runSync stateDir
+             cli <- Docker.mkCli <$> Docker.optionsFromEnv
+             runSync stateDir cli
       CookParse files ->
           mapM_ cookParse files
       CookVersion showNumeric ->

@@ -1,8 +1,8 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Tests.DirectDocker (htf_thisModulesTests) where
+module Tests.Docker.API (htf_thisModulesTests) where
 
-import Cook.DirectDocker
+import Cook.Docker.API
 import Test.Framework
 
 test_parseDockerTag :: IO ()

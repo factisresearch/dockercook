@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
-module Cook.Docker.Tls where
+module Cook.Docker.TLS where
 
 import Control.Lens ((&), (.~))
 import Data.Default

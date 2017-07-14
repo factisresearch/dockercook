@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
-module Cook.Docker
+module Cook.Docker.CLI
     ( dockerReachable
     , DockerContainer
     , dockerRunForCopy, dockerRm, dockerCp

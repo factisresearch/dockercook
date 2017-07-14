@@ -18,7 +18,7 @@ where
 import Cook.Util
 import Cook.State.Model
 import Cook.Types
-import qualified Cook.DirectDocker as Docker
+import qualified Cook.Docker.API as Docker
 
 import Control.Concurrent
 import Control.Concurrent.STM
@@ -227,8 +227,8 @@ hashManagerLookup (StateManager{..}) hashMapV hashWriteChan fullFilePath compute
          Nothing ->
              recomputeHash
 
-syncImages :: StateManager -> Docker.DockerHostId -> (DockerImage -> IO Bool) -> IO ()
-syncImages sm@(StateManager{..}) dh imageStillExists =
+syncImages :: StateManager -> Docker.DockerClient -> Docker.DockerHostId -> (DockerImage -> IO Bool) -> IO ()
+syncImages sm@(StateManager{..}) cli dh imageStillExists =
     do let hostId = Docker.dockerHostIdAsText dh
        x <- sm_runSqlGet $ selectList [DbDockerImageHost ==. hostId] []
        forM_ x $ \entity ->
@@ -236,7 +236,7 @@ syncImages sm@(StateManager{..}) dh imageStillExists =
                   name = dbDockerImageName dockerImage
               exists <- imageStillExists (DockerImage name)
               if exists
-              then do mRawId <- Docker.dockerImageId (DockerImage name)
+              then do mRawId <- Docker.dockerImageId cli (DockerImage name)
                       case mRawId of
                         Nothing ->
                             do logInfo ("The image " ++ T.unpack name
