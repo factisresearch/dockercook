@@ -11,8 +11,8 @@ import Cook.Types
 import Cook.Uploader
 import Cook.Util
 import Cook.Downloads
-import qualified Cook.Docker as D
-import qualified Cook.DirectDocker as Docker
+import qualified Cook.Docker.CLI as D
+import qualified Cook.Docker.API as Docker
 
 import Control.Arrow (first)
 import Control.Monad
@@ -173,8 +173,8 @@ data BuildEnv
    , be_uploader :: Uploader
    }
 
-buildImage :: BuildEnv -> (BuildFile, FilePath) -> IO DockerImage
-buildImage env (bf, bfRootDir) =
+buildImage :: BuildEnv -> Docker.DockerClient -> (BuildFile, FilePath) -> IO DockerImage
+buildImage env cli (bf, bfRootDir) =
     withSystemTempDirectory "cookbuildXXX" $ \buildTempDir ->
     withSystemTempDirectory "cookprepareXXX" $ \prepareDir ->
     do logDebug $ "Inspecting " ++ name ++ "..."
@@ -182,7 +182,7 @@ buildImage env (bf, bfRootDir) =
            case bf_base bf of
              (BuildBaseCook parentBuildFile) ->
                  do parent <- prepareEntryPoint $ buildFileIdAddParent bfRootDir parentBuildFile
-                    buildImage env (parent, bfRootDir)
+                    buildImage env cli (parent, bfRootDir)
              (BuildBaseDocker rootImage) ->
                  do baseExists <- dockerImageExists rootImage
                     if baseExists
@@ -199,7 +199,7 @@ buildImage env (bf, bfRootDir) =
        baseDockerId <-
            case bf_base bf of
              BuildBaseDocker rootImage ->
-                 do mImageId <- Docker.dockerImageId rootImage
+                 do mImageId <- Docker.dockerImageId cli rootImage
                     case mImageId of
                       Nothing ->
                           error ("Failed to get image id of " ++ (show $ unDockerImage rootImage))
@@ -212,7 +212,7 @@ buildImage env (bf, bfRootDir) =
                       fileDir = takeDirectory cf
                   cookPrep <-
                       prepareEntryPoint (buildFileIdAddParent bfRootDir $ BuildFileId $ T.pack cf)
-                  image <- buildImage env (cookPrep, normalise $ bfRootDir </> fileDir)
+                  image <- buildImage env cli (cookPrep, normalise $ bfRootDir </> fileDir)
                   return (image, files)
        (mTar, mkPrepareTar, prepareHash) <-
            runPrepareCommands buildTempDir prepareDir bf streamHook cookCopyHm
@@ -335,7 +335,7 @@ buildImage env (bf, bfRootDir) =
       uploader = be_uploader env
       mStreamHook = be_streamHook env
       withRawImageId imageName action =
-          do mImageId <- Docker.dockerInspectImage imageName
+          do mImageId <- Docker.dockerInspectImage cli imageName
              case mImageId of
                Nothing ->
                    do let errorMsg =
@@ -361,7 +361,7 @@ buildImage env (bf, bfRootDir) =
              known <-
                  do locallyKnown <- isImageKnown (be_stateManager env) localIm (Docker.di_id hostInfo)
                     if locallyKnown
-                    then do remotelyKnown <- Docker.doesImageExist imCache (Left localIm)
+                    then do remotelyKnown <- Docker.doesImageExist cli imCache (Left localIm)
                             unless remotelyKnown $
                                    do logInfo $
                                          "My local state is not up to date with the remote host. "
@@ -380,13 +380,13 @@ buildImage env (bf, bfRootDir) =
              then do logDebug' $ "Image " ++ show imageName ++ " is registered in your state directory. Assuming it is present!"
                      storeRawId
                      return True
-             else do taggedExists <- Docker.doesImageExist imCache (Left localIm)
+             else do taggedExists <- Docker.doesImageExist cli imCache (Left localIm)
                      case (taggedExists, mRawImageId) of
                        (True, _) ->
                            do storeRawId
                               return True
                        (False, Just rawId) ->
-                           do rawExists <- Docker.doesImageExist imCache (Right rawId)
+                           do rawExists <- Docker.doesImageExist cli imCache (Right rawId)
                               when rawExists $
                                    D.tagImage rawId localIm
                               return rawExists
@@ -440,8 +440,8 @@ buildImage env (bf, bfRootDir) =
       targetedFiles = filter (\(fp, _) -> isNeededHash fp) (be_fileHashes env)
 
 
-cookBuild :: FilePath -> FilePath -> CookConfig -> Uploader -> Maybe StreamHook -> IO [DockerImage]
-cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
+cookBuild :: FilePath -> FilePath -> CookConfig -> Docker.DockerClient -> Uploader -> Maybe StreamHook -> IO [DockerImage]
+cookBuild rootDir stateDir cfg@(CookConfig{..}) cli uploader mStreamHook =
     do (stateManager, hashManager) <- createStateManager stateDir
        boring <- liftM (fromMaybe []) $ T.mapM (liftM parseBoring . T.readFile) cc_boringFile
        fileHashes <- makeDirectoryFileHashTable hashManager (isBoring boring) rootDir
@@ -451,7 +451,7 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
                          <*> return (takeDirectory entryPointFile)
                 ) cc_buildEntryPoints
        hostInfo <-
-           do di <- Docker.dockerInfo
+           do di <- Docker.dockerInfo cli
               case di of
                 Nothing ->
                     error "docker info failed! Are you connected to a docker host?"
@@ -477,7 +477,7 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) uploader mStreamHook =
                , be_fileHashes = fileHashes
                , be_uploader = uploader
                }
-       res <- mapM (buildImage buildEnv) roots
+       res <- mapM (buildImage buildEnv cli) roots
        waitForWrites stateManager
        logInfo "Finished building all required images!"
        return res
