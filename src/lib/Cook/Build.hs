@@ -31,6 +31,7 @@ import System.IO.Temp
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.List as List
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
@@ -155,10 +156,20 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
                           compressFilesInDir True (tempDir </> outTar) prepareDir ["."]
                return $ (Just outTar, buildPrepareTar, concatHash hashes)
     where
-      computeHash fp =
-          do bs <- C.sourceFile fp $$ C.sinkList
-             logDebug ("PREPARE: Hashing " ++ show fp)
-             return $ [quickHash bs]
+      computeHash fp
+          | ".cookHash_" `List.isPrefixOf` takeFileName fp = return []
+          | otherwise =
+              do let hashFile =
+                         takeDirectory fp </> (".cookHash_" ++ takeFileName fp)
+                 hashFileExists <- liftIO $ doesFileExist hashFile
+                 fileToHash <-
+                     if hashFileExists
+                     then do logInfo ("PREPARE: Hashing custom file " ++ show hashFile ++ " for " ++ show fp)
+                             return hashFile
+                     else do logDebug ("PREPARE: Hashing " ++ show fp)
+                             return fp
+                 bs <- C.sourceFile fileToHash $$ C.sinkList
+                 return $ [quickHash bs]
 
 data BuildEnv
    = BuildEnv

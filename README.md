@@ -85,8 +85,17 @@ This shell command is executed in an empty directory and is useful to copy
 additional files into the build context. Any file that you copy in the
 working directory of the shell-command will be available in your cook file
 from the `/_cookpreps` directory. All `PREPARE` commands in one file will be
-executed in the same preparation directory. For more information check the
-example.
+executed in the same preparation directory.
+
+After running all `PREPARE` commands, dockercook hashes all files
+produced as a dependency checksum.  But sometimes, the content of a file
+is non-deterministic although it's semantics is the same. In these
+situations, taking the hash of the file unnecessarily produces different
+images.  As a solution, you can generate a file called `.cookHash_FILE`
+along with `FILE`.  If the `PREPARE` command finds such a file in the same
+directory as `FILE`, it hashes the `.cookHash_FILE` instead of `FILE`.
+
+For more information on `PREPARE` check the example.
 
 ## COOKCOPY [cookfile] [image-dir] [target-dir]
 
@@ -228,4 +237,3 @@ Lot's of time is saved because you don't need to reinstall all your packages dep
 # Related work
 
 * [docker-buildcache](https://github.com/baremetal/docker-buildcache)
-
