@@ -98,10 +98,8 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
             Just relToRootF ->
                 let shouldIgnore = ignore relToRootF
                 in if shouldIgnore
-                   then do logDebug ("Ignoring " ++ show relToRootF)
-                           return False
-                   else do logDebug ("Traversing " ++ show relToRootF)
-                           return True
+                   then return False
+                   else return True
       hashFile fullRoot relToCurrentF =
           case FP.stripPrefix root relToCurrentF of
             Nothing ->
@@ -111,11 +109,9 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                 hashFile' fullRoot relToRootF (FP.encodeString relToCurrentF)
       hashFile' fullRoot relToRootF relToCurrentF
           | ignore relToRootF =
-              do logDebug ("Ignored " ++ show relToRootF)
-                 return Nothing
+              return Nothing
           | otherwise =
-              do logDebug ("Hashed " ++ show relToRootF)
-                 let fullFilePath = fullRoot </> FP.encodeString relToRootF
+              do let fullFilePath = fullRoot </> FP.encodeString relToRootF
                      hashComp =
                          do bs <- C.sourceFile relToCurrentF $$ C.sinkList
                             liftIO $ hPutStr stderr "#"
