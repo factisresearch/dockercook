@@ -82,7 +82,10 @@ runProg' cmd =
 
 main :: IO ()
 main =
-    execParser opts >>= runProg
+    do -- We set the buffering mode here so that we get output immediately
+       hSetBuffering stdout LineBuffering
+       hSetBuffering stderr NoBuffering
+       execParser opts >>= runProg
     where
       opts = info (helper <*> argParse)
              ( fullDesc
