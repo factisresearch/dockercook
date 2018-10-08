@@ -84,7 +84,7 @@ main :: IO ()
 main =
     do -- We set the buffering mode here so that we get output immediately
        hSetBuffering stdout LineBuffering
-       hSetBuffering stderr LineBuffering
+       hSetBuffering stderr NoBuffering
        execParser opts >>= runProg
     where
       opts = info (helper <*> argParse)
