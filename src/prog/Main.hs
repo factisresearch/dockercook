@@ -18,6 +18,7 @@ import Control.Monad
 import Options.Applicative
 import System.Exit
 import System.Log
+import System.IO
 import System.Directory
 import System.FilePath
 import System.Process
