@@ -31,6 +31,7 @@ import System.IO.Temp
 import System.Process
 import Text.Regex (mkRegex, matchRegex)
 import qualified Data.HashMap.Strict as HM
+import qualified Data.List as List
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as B16
 import qualified Data.ByteString.Char8 as BSC
@@ -97,10 +98,8 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
             Just relToRootF ->
                 let shouldIgnore = ignore relToRootF
                 in if shouldIgnore
-                   then do logDebug ("Ignoring " ++ show relToRootF)
-                           return False
-                   else do logDebug ("Traversing " ++ show relToRootF)
-                           return True
+                   then return False
+                   else return True
       hashFile fullRoot relToCurrentF =
           case FP.stripPrefix root relToCurrentF of
             Nothing ->
@@ -110,11 +109,9 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
                 hashFile' fullRoot relToRootF (FP.encodeString relToCurrentF)
       hashFile' fullRoot relToRootF relToCurrentF
           | ignore relToRootF =
-              do logDebug ("Ignored " ++ show relToRootF)
-                 return Nothing
+              return Nothing
           | otherwise =
-              do logDebug ("Hashed " ++ show relToRootF)
-                 let fullFilePath = fullRoot </> FP.encodeString relToRootF
+              do let fullFilePath = fullRoot </> FP.encodeString relToRootF
                      hashComp =
                          do bs <- C.sourceFile relToCurrentF $$ C.sinkList
                             liftIO $ hPutStr stderr "#"
@@ -155,10 +152,20 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
                           compressFilesInDir True (tempDir </> outTar) prepareDir ["."]
                return $ (Just outTar, buildPrepareTar, concatHash hashes)
     where
-      computeHash fp =
-          do bs <- C.sourceFile fp $$ C.sinkList
-             logDebug ("PREPARE: Hashing " ++ show fp)
-             return $ [quickHash bs]
+      computeHash fp
+          | ".cookHash_" `List.isPrefixOf` takeFileName fp = return []
+          | otherwise =
+              do let hashFile =
+                         takeDirectory fp </> (".cookHash_" ++ takeFileName fp)
+                 hashFileExists <- liftIO $ doesFileExist hashFile
+                 fileToHash <-
+                     if hashFileExists
+                     then do logInfo ("PREPARE: Hashing custom file " ++ show hashFile ++ " for " ++ show fp)
+                             return hashFile
+                     else do logDebug ("PREPARE: Hashing " ++ show fp)
+                             return fp
+                 bs <- C.sourceFile fileToHash $$ C.sinkList
+                 return $ [quickHash bs]
 
 data BuildEnv
    = BuildEnv
