@@ -15,6 +15,7 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad
 import Data.Maybe
+import GHC.Natural
 import System.Process
 import System.Exit
 import qualified Data.Text as T
@@ -26,7 +27,7 @@ data Uploader
    , _u_task :: TVar (Maybe DockerImage)
    }
 
-mkUploader :: Int -> IO Uploader
+mkUploader :: Natural -> IO Uploader
 mkUploader queueSize =
     do q <- newTBQueueIO queueSize
        v <- newTVarIO Nothing

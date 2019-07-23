@@ -4,7 +4,6 @@ module Cook.Docker.TLS where
 
 import Control.Lens ((&), (.~))
 import Data.Default
-import Data.Monoid
 import Data.X509.CertificateStore
 import Data.X509.File
 import Network.Connection (TLSSettings(..))

@@ -14,14 +14,13 @@ import Cook.Downloads
 import qualified Cook.Docker.CLI as D
 import qualified Cook.Docker.API as Docker
 
+import Conduit
 import Control.Arrow (first)
 import Control.Monad
 import Control.Exception (bracket)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Resource (runResourceT, MonadResource)
-import Data.Conduit
 import Data.Maybe (fromMaybe, isJust, catMaybes)
-import Data.Monoid
 import Data.Time (getCurrentTime, diffUTCTime)
 import System.Directory
 import System.Exit
@@ -50,17 +49,16 @@ fixTailingSlash s =
       ('/':_) -> s
       d -> reverse ('/':d)
 
-sourceDirectoryDeep' :: MonadResource m
-                    => Bool -- ^ Follow directory symlinks
+sourceDirectoryDeep' :: Bool -- ^ Follow directory symlinks
                     -> (FilePath -> IO Bool) -- ^ Should a directory be expanded
                     -> FilePath -- ^ Root directory
-                    -> Producer m FilePath
+                    -> ConduitT i FilePath (ResourceT IO) ()
 sourceDirectoryDeep' followSymlinks shouldFollow =
   start
   where
-    start :: MonadResource m => FilePath -> Producer m FilePath
-    start dir = C.sourceDirectory dir =$= awaitForever go
-    go :: MonadResource m => FilePath -> Producer m FilePath
+    start :: MonadResource m => FilePath -> ConduitT i FilePath m ()
+    start dir = C.sourceDirectory dir .| awaitForever go
+    go :: MonadResource m => FilePath -> ConduitT i FilePath m ()
     go fp =
         do ft <- liftIO $ F.getFileType fp
            case ft of
@@ -83,9 +81,10 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
        logInfo $ "Hashing directory tree at " ++ fullRoot ++ ". This could take some time..."
        x <-
            runResourceT $!
+           runConduit $
            sourceDirectoryDeep' False dirCheck (FP.encodeString root)
-           =$= C.concatMapM (hashFile fullRoot . FP.decodeString)
-           $$ C.sinkList
+           .| C.concatMapM (hashFile fullRoot . FP.decodeString)
+           .| C.sinkList
        hPutStr stderr "\n"
        logDebug "Done hashing your repo!"
        return $ map (first FP.decodeString) x
@@ -113,7 +112,7 @@ makeDirectoryFileHashTable hMgr ignore (FP.decodeString . fixTailingSlash -> roo
           | otherwise =
               do let fullFilePath = fullRoot </> FP.encodeString relToRootF
                      hashComp =
-                         do bs <- C.sourceFile relToCurrentF $$ C.sinkList
+                         do bs <- runConduit $ C.sourceFile relToCurrentF .| C.sinkList
                             liftIO $ hPutStr stderr "#"
                             return $! quickHash bs
                  hash <- fastFileHash hMgr fullFilePath hashComp
@@ -145,13 +144,16 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
        if fileCount <= 0
        then return (Nothing, return (), quickHash ["no-prepare"])
        else do hashes <-
-                   runResourceT $! sourceDirectoryDeep' False (const $ return True) prepareDir
-                       =$= C.concatMapM computeHash $$ C.sinkList
+                   runConduitRes $
+                   sourceDirectoryDeep' False (const $ return True) prepareDir
+                       .| concatMapMC computeHash
+                       .| sinkList
                let buildPrepareTar =
                        do logDebug "Actually compressing the tar dir"
                           compressFilesInDir True (tempDir </> outTar) prepareDir ["."]
                return $ (Just outTar, buildPrepareTar, concatHash hashes)
     where
+      computeHash :: FilePath -> ResourceT IO [SHA1]
       computeHash fp
           | ".cookHash_" `List.isPrefixOf` takeFileName fp = return []
           | otherwise =
@@ -164,7 +166,7 @@ runPrepareCommands tempDir prepareDir bf streamHook cookCopyHm =
                              return hashFile
                      else do logDebug ("PREPARE: Hashing " ++ show fp)
                              return fp
-                 bs <- C.sourceFile fileToHash $$ C.sinkList
+                 bs <- runConduit $ C.sourceFile fileToHash .| C.sinkList
                  return $ [quickHash bs]
 
 data BuildEnv

@@ -30,7 +30,6 @@ import Control.Monad.Trans.Resource
 import Control.Retry
 import Data.Aeson
 import Data.Maybe
-import Data.Monoid
 import Data.Time
 import Data.Time.Clock.POSIX
 import Database.Persist.Sqlite

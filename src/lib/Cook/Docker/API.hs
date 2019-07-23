@@ -21,11 +21,10 @@ import Control.Concurrent.STM
 import Control.Exception
 import Control.Lens ((^?))
 import Control.Monad
-import Data.Aeson
+import Data.Aeson (FromJSON(..), ToJSON, withObject, withText, (.!=), (.:?), (.:))
 import Data.Char (isDigit)
 import Data.List (foldl')
 import Data.Maybe
-import Data.Monoid
 import Network.HTTP.Client (HttpException(..))
 import Network.URI
 import Network.Wreq
