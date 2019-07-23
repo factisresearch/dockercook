@@ -5,7 +5,6 @@ import Cook.Types
 import Control.Monad
 import Control.Monad.Trans
 import Control.Retry
-import Data.Monoid
 import System.Exit
 import System.IO
 import System.Log.Formatter

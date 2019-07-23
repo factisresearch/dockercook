@@ -191,7 +191,7 @@ copyTarAndUnpack um tarName imageDest =
     [ DockerCommand "COPY" (T.pack $ tarName ++ " /" ++ tarName)
     , DockerCommand "RUN" $ T.pack $
       "mkdir -p " ++ imageDest
-      ++ " && /usr/bin/env tar xvk "
+      ++ " && /usr/bin/env tar xv "
       ++ (case um of
             SkipExisting -> "--skip-old-files"
             OverwriteExisting -> "--overwrite"
