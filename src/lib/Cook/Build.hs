@@ -1,8 +1,9 @@
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DoAndIfThenElse #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ViewPatterns #-}
 module Cook.Build (cookBuild, cookParse) where
 
 import Cook.BuildFile
@@ -18,8 +19,6 @@ import Conduit
 import Control.Arrow (first)
 import Control.Monad
 import Control.Exception (bracket)
-import Control.Monad.IO.Class (liftIO)
-import Control.Monad.Trans.Resource (runResourceT, MonadResource)
 import Data.Maybe (fromMaybe, isJust, catMaybes)
 import Data.Time (getCurrentTime, diffUTCTime)
 import System.Directory
@@ -28,7 +27,7 @@ import System.FilePath
 import System.IO (hPutStr, hPutStrLn, hFlush, stderr)
 import System.IO.Temp
 import System.Process
-import Text.Regex (mkRegex, matchRegex)
+import Text.Regex.TDFA
 import qualified Data.HashMap.Strict as HM
 import qualified Data.List as List
 import qualified Data.ByteString as BS
@@ -492,9 +491,10 @@ cookBuild rootDir stateDir cfg@(CookConfig{..}) cli uploader mStreamHook =
        return res
     where
       parseBoring =
-          map (mkRegex . T.unpack) . filter (not . T.null) . filter (not . ("#" `T.isPrefixOf`) . T.strip) . map T.strip .  T.lines
+          filter (not . T.null) . filter (not . ("#" `T.isPrefixOf`) . T.strip) . map T.strip .  T.lines
       isBoring boring fp =
-          any (isJust . flip matchRegex (FP.encodeString fp)) boring
+          let fpText = T.pack . FP.encodeString $ fp
+           in any (fpText =~) boring
 
 cookParse :: FilePath -> IO ()
 cookParse fp =

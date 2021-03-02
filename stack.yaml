@@ -1,4 +1,15 @@
+setup-info:
+  ghc:
+    macosx:
+      8.8.4:
+        url: "https://dev-downloads.cpmed.de/data/pub/ghc-8.8.4-x86_64-apple-darwin.tar.xz"
+        sha1: 9c4e75ba18f3282171f237ced248651c1589df2e
+        sha256: 77bb5bc45ebe9218e0f057f3ce9b10ad57e1776fca01a8714f432a8bc3a7f42a
+
 packages:
 - '.'
 extra-deps: []
-resolver: lts-13.29
+
+resolver: lts-16.20
+allow-newer: true
+require-stack-version: ">= 1.7.1"
